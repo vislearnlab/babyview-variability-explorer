@@ -171,11 +171,6 @@ a{color:var(--s0)}
         </div>
       </div>
       <div class="card pad">
-        <h3>Agreement with published ordering</h3>
-        <canvas class="mini" id="miniCurve"></canvas>
-        <table class="stats" id="curveStats"></table>
-      </div>
-      <div class="card pad">
         <h3>Selected categories <span id="catHint" class="hint"></span></h3>
         <div class="seg" id="axisSeg" style="margin-bottom:10px">
           <button data-v="freq_global" class="on">freq × global</button>
@@ -277,7 +272,7 @@ function setLayer(L,animate){
     L===12?"final":"block "+D.layers[L];
   document.getElementById("fLayer").textContent = L===12?"final":D.layers[L];
   document.getElementById("layer").value=L;
-  updateStats(); drawMini(); drawCat();
+  updateStats(); drawCat();
 }
 
 // ---- main canvas --------------------------------------------------------
@@ -375,31 +370,6 @@ function showCrop(i){
     category V<sub>c</sub> here: <b>${g.toFixed(2)}</b><br>
     local kNN here: <b>${l.toFixed(2)}</b><br>
     <span class="hint">${D.category_metrics.n_exemplars[c]} crops in category</span>`;
-}
-function drawMini(){
-  const c=document.getElementById("miniCurve"), x=c.getContext("2d");
-  const dpr=window.devicePixelRatio||1, w=c.parentElement.clientWidth-30, h=132;
-  c.width=w*dpr; c.height=h*dpr; c.style.width=w+"px"; c.style.height=h+"px";
-  x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
-  const pad=22, n=13;
-  const px=i=>pad+(w-pad-8)*(i/(n-1)), py=v=>h-18-(h-30)*v;
-  x.strokeStyle=css("--grid"); x.lineWidth=1;
-  [0,0.5,1].forEach(v=>{x.beginPath();x.moveTo(pad,py(v));x.lineTo(w-8,py(v));x.stroke()});
-  const series=[["rho_global",GLOBAL_C],["rho_local",LOCAL_C]];
-  series.forEach(([k,col])=>{
-    x.strokeStyle=col; x.lineWidth=2; x.beginPath();
-    D.curves[k].forEach((v,i)=>{i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v))});
-    x.stroke();
-  });
-  x.fillStyle=css("--accent");
-  x.fillRect(px(LAYER)-1,10,2,h-28);
-  x.fillStyle=css("--muted"); x.font="10px system-ui";
-  x.fillText("0",4,py(0)+3); x.fillText("1",4,py(1)+3);
-  const st=document.getElementById("curveStats");
-  st.innerHTML=`<tr><td><span style="color:${GLOBAL_C}">&#9679;</span> global</td>
-      <td class="v">${D.curves.rho_global[LAYER].toFixed(3)}</td></tr>
-    <tr><td><span style="color:${LOCAL_C}">&#9679;</span> local (kNN)</td>
-      <td class="v">${D.curves.rho_local[LAYER].toFixed(3)}</td></tr>`;
 }
 let AXISMODE="freq_global";
 const AXES={
@@ -569,7 +539,7 @@ function applyTheme(mode){
   else root.setAttribute("data-theme",mode);
   try{localStorage.setItem("bvexpl-theme",mode)}catch(e){}
   // canvases read CSS vars, so repaint after the variables switch (once loaded)
-  if(D) requestAnimationFrame(()=>{draw();drawMini();drawCat();drawLegend()});
+  if(D) requestAnimationFrame(()=>{draw();drawCat();drawLegend()});
 }
 document.getElementById("themeSeg").onclick=e=>{
   const b=e.target.closest("button"); if(!b) return;
@@ -584,7 +554,7 @@ document.getElementById("themeSeg").onclick=e=>{
   if(window.matchMedia){
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{
       if(D && (localStorage.getItem("bvexpl-theme")||"auto")==="auto")
-        requestAnimationFrame(()=>{draw();drawMini();drawCat();drawLegend()});
+        requestAnimationFrame(()=>{draw();drawCat();drawLegend()});
     });
   }
 })();
@@ -648,7 +618,7 @@ cv.addEventListener("click",e=>{
   if(!selCats.size) drawCat();
 });
 cv.addEventListener("dblclick",()=>resetView());
-window.addEventListener("resize",()=>{resize();drawMini();drawCat()});
+window.addEventListener("resize",()=>{resize();drawCat()});
 
 // ---- boot ---------------------------------------------------------------
 (async function(){
