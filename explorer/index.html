@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BabyView CLIP Layer Explorer</title>
+<style>
+:root{
+  color-scheme: light;
+  --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --ring:rgba(11,11,11,0.10); --shadow:rgba(11,11,11,0.12);
+  --accent:#eb6834; --s0:#2a78d6; --s1:#008300;
+}
+:root[data-theme="dark"], html[data-theme="dark"]{
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,0.10); --shadow:rgba(0,0,0,0.5);
+  --accent:#eb6834; --s0:#3987e5; --s1:#008300;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,0.10); --shadow:rgba(0,0,0,0.5);
+    --s0:#3987e5;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+header{padding:22px 26px 10px;max-width:1560px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--ink2);max-width:960px;font-size:13.5px}
+.sub b{color:var(--ink);font-weight:600}
+.wrap{max-width:1560px;margin:0 auto;padding:0 26px 60px}
+.toolbar{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:flex-end;
+  padding:14px 16px;background:var(--surface);border:1px solid var(--ring);border-radius:12px;margin:10px 0 14px}
+.tgroup{display:flex;flex-direction:column;gap:6px}
+.tlabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:5px;max-width:760px}
+.chip{border:1px solid var(--ring);background:transparent;color:var(--ink2);border-radius:999px;
+  padding:3px 10px;font-size:12.5px;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:6px}
+.chip:hover{border-color:var(--axis)}
+.chip.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.chip .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+.seg{display:inline-flex;border:1px solid var(--ring);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--ink2);padding:5px 11px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--s0);color:#fff}
+.layerwrap{display:flex;align-items:center;gap:12px;min-width:390px}
+.layerwrap input{flex:1;accent-color:var(--accent)}
+.layerbadge{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px;min-width:74px;
+  padding:3px 9px;border-radius:7px;background:var(--accent);color:#fff;text-align:center}
+button.ghost{border:1px solid var(--ring);background:transparent;color:var(--ink2);
+  border-radius:8px;padding:5px 12px;font:inherit;cursor:pointer}
+button.ghost:hover{border-color:var(--axis);color:var(--ink)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px}
+@media(max-width:1080px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:12px}
+.plot-card{position:relative;overflow:hidden}
+#scatter{display:block;width:100%;height:660px;border-radius:12px;touch-action:none;cursor:crosshair}
+.legend{position:absolute;left:14px;top:12px;display:flex;flex-direction:column;gap:4px;
+  background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(4px);
+  padding:8px 10px;border:1px solid var(--ring);border-radius:9px;font-size:12px;pointer-events:none;max-width:190px}
+.legend .row{display:flex;align-items:center;gap:7px;color:var(--ink2)}
+.legend .sw{width:11px;height:11px;border-radius:3px;flex:none}
+.side{display:flex;flex-direction:column;gap:14px}
+.pad{padding:13px 15px}
+.pad h3{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+#hoverCard{min-height:196px}
+#hoverImg{width:112px;height:112px;object-fit:contain;background:var(--plane);
+  border:1px solid var(--ring);border-radius:8px;display:block}
+.hrow{display:flex;gap:12px;align-items:flex-start}
+.hmeta{font-size:13px;color:var(--ink2);line-height:1.65}
+.hmeta b{color:var(--ink);font-size:15px;font-weight:650}
+.hint{color:var(--muted);font-size:12px}
+table.stats{width:100%;border-collapse:collapse;font-size:12.5px}
+table.stats td{padding:3px 0;color:var(--ink2)}
+table.stats td.v{text-align:right;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+canvas.mini{display:block;width:100%;height:132px}
+.foot{display:flex;flex-wrap:wrap;gap:18px;padding:11px 16px;margin-top:14px;
+  background:var(--surface);border:1px solid var(--ring);border-radius:12px;font-size:13px;color:var(--ink2)}
+.foot b{color:var(--ink);font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6}
+a{color:var(--s0)}
+</style>
+</head>
+<body>
+<header>
+  <h1>BabyView CLIP Layer Explorer</h1>
+  <div class="sub">
+    <b>5,921 human-validated object crops</b> from children's egocentric video, across
+    <b>72 CDI noun categories</b>. Each point is one crop, laid out by t-SNE of its CLIP
+    representation <b>at a chosen transformer block</b>. Drag the layer slider to watch the
+    space reorganize from early visual features to the final semantic embedding used in the
+    CCN 2026 abstract.
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="toolbar">
+    <div class="tgroup" style="flex:1">
+      <div class="tlabel">CLIP transformer block</div>
+      <div class="layerwrap">
+        <span class="layerbadge" id="layerBadge">block 0</span>
+        <input type="range" id="layer" min="0" max="12" step="1" value="0">
+        <button class="ghost" id="playBtn">Play</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <div class="tlabel">Color by</div>
+      <div class="seg" id="colorSeg">
+        <button data-v="semantic" class="on">CDI semantic</button>
+        <button data-v="global">Global dispersion</button>
+        <button data-v="local">Local dispersion</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <div class="tlabel">View</div>
+      <div class="seg" id="thumbSeg">
+        <button data-v="dots" class="on">Dots</button>
+        <button data-v="thumbs">Crops</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <div class="tlabel">Reset</div>
+      <button class="ghost" id="resetBtn">Clear filters</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tgroup" style="flex:1">
+      <div class="tlabel">Filter by CDI semantic group</div>
+      <div class="chips" id="semChips"></div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tgroup" style="flex:1">
+      <div class="tlabel">Filter by category <span id="catCount" class="hint"></span></div>
+      <div class="chips" id="catChips"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card plot-card">
+      <canvas id="scatter"></canvas>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="side">
+      <div class="card pad" id="hoverCard">
+        <h3>Crop</h3>
+        <div class="hrow">
+          <img id="hoverImg" alt="">
+          <div class="hmeta" id="hoverMeta"><span class="hint">Hover a point to see the crop.</span></div>
+        </div>
+      </div>
+      <div class="card pad">
+        <h3>Agreement with published ordering</h3>
+        <canvas class="mini" id="miniCurve"></canvas>
+        <table class="stats" id="curveStats"></table>
+      </div>
+      <div class="card pad">
+        <h3>Selected category</h3>
+        <canvas class="mini" id="miniCat"></canvas>
+        <table class="stats" id="catStats"></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>Showing <b id="fVis">0</b> of <b id="fTot">0</b> crops</div>
+    <div>Categories <b id="fCats">0</b></div>
+    <div>Block <b id="fLayer">0</b></div>
+    <div>rho with published global <b id="fRhoG">-</b></div>
+    <div>rho with published local <b id="fRhoL">-</b></div>
+  </div>
+
+  <div class="note" id="metaNote"></div>
+</div>
+
+<script>
+const CDI_COLORS={animals:"#4DB8A8",body_parts:"#E87A5F",clothing:"#9B7EC8",food_drink:"#E8A54C",
+  furniture_rooms:"#6BAB7A",household:"#D97B9E",outside:"#5B9BD5",people:"#E8C44C",
+  toys:"#B07CC8",vehicles:"#6BA3D5",other:"#8B9A9E"};
+const GLOBAL_C="#1F4E79", LOCAL_C="#C0561F";
+
+let D=null, LAYER=0, COLORBY="semantic", VIEW="dots";
+let selCats=new Set(), selSems=new Set(), pinned=null, hoverIdx=-1;
+let curX=null, curY=null, animFrom=null, animTo=null, animT=1, animRAF=0;
+let playing=false, playTimer=0;
+
+const cv=document.getElementById("scatter"), ctx=cv.getContext("2d");
+const imgCache=new Map();
+
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function lerp(a,b,t){return a+(b-a)*t}
+
+function getImg(file){
+  let e=imgCache.get(file);
+  if(e) return e.img;
+  const img=new Image();
+  img.src=D.crop_dir+"/"+file;
+  img.onload=()=>{if(VIEW==="thumbs") draw()};
+  imgCache.set(file,{img});
+  return img;
+}
+
+// ---- color scales -------------------------------------------------------
+function seqColor(t){ // muted blue -> orange ramp, readable in both themes
+  t=Math.max(0,Math.min(1,t));
+  const a=[43,120,214], b=[235,104,52];
+  return `rgb(${Math.round(lerp(a[0],b[0],t))},${Math.round(lerp(a[1],b[1],t))},${Math.round(lerp(a[2],b[2],t))})`;
+}
+function catMetricRange(key){
+  const arr=D.category_metrics[key+"_by_layer"][LAYER];
+  return [Math.min(...arr), Math.max(...arr)];
+}
+function pointColor(i){
+  const c=D.points.cat[i];
+  if(COLORBY==="semantic"){
+    return CDI_COLORS[D.semantics[D.cat_semantic[c]]]||CDI_COLORS.other;
+  }
+  const key=COLORBY==="global"?"global":"local";
+  const arr=D.category_metrics[key+"_by_layer"][LAYER];
+  const [lo,hi]=catMetricRange(key);
+  return seqColor(hi>lo?(arr[c]-lo)/(hi-lo):0.5);
+}
+function visible(i){
+  const c=D.points.cat[i];
+  if(selCats.size && !selCats.has(c)) return false;
+  if(selSems.size && !selSems.has(D.cat_semantic[c])) return false;
+  return true;
+}
+
+// ---- layout / animation -------------------------------------------------
+function setLayer(L,animate){
+  const from={x:curX?curX.slice():null,y:curY?curY.slice():null};
+  LAYER=L;
+  const tx=D.points.x[L], ty=D.points.y[L];
+  if(animate && from.x){
+    animFrom=from; animTo={x:tx,y:ty}; animT=0;
+    cancelAnimationFrame(animRAF);
+    const step=()=>{
+      animT=Math.min(1,animT+0.055);
+      const e=animT<0.5?2*animT*animT:1-Math.pow(-2*animT+2,2)/2; // easeInOutQuad
+      curX=animFrom.x.map((v,i)=>lerp(v,animTo.x[i],e));
+      curY=animFrom.y.map((v,i)=>lerp(v,animTo.y[i],e));
+      draw();
+      if(animT<1) animRAF=requestAnimationFrame(step);
+    };
+    animRAF=requestAnimationFrame(step);
+  }else{
+    curX=tx.slice(); curY=ty.slice(); draw();
+  }
+  document.getElementById("layerBadge").textContent =
+    L===12?"final":"block "+D.layers[L];
+  document.getElementById("fLayer").textContent = L===12?"final":D.layers[L];
+  document.getElementById("layer").value=L;
+  updateStats(); drawMini(); drawCat();
+}
+
+// ---- main canvas --------------------------------------------------------
+function resize(){
+  const r=cv.parentElement.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(r.width*dpr); cv.height=Math.round(660*dpr);
+  cv.style.height="660px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+function proj(){
+  const r=cv.parentElement.getBoundingClientRect();
+  const pad=34, w=r.width-pad*2, h=660-pad*2;
+  const s=Math.min(w,h)/210;
+  return {cx:r.width/2, cy:330, s};
+}
+function draw(){
+  if(!D||!curX) return;
+  const r=cv.parentElement.getBoundingClientRect();
+  ctx.clearRect(0,0,r.width,660);
+  const {cx,cy,s}=proj();
+  const anyFilter = selCats.size||selSems.size;
+
+  if(VIEW==="thumbs"){
+    for(let i=0;i<D.n;i++){
+      if(!visible(i)) continue;
+      const img=getImg(D.points.file[i]);
+      if(!img.complete||!img.naturalWidth) continue;
+      const x=cx+curX[i]*s, y=cy+curY[i]*s, sz=13;
+      ctx.globalAlpha=0.95;
+      ctx.drawImage(img,x-sz/2,y-sz/2,sz,sz);
+    }
+    ctx.globalAlpha=1;
+  }else{
+    // faded non-matching points for context
+    if(anyFilter){
+      ctx.globalAlpha=0.10;
+      for(let i=0;i<D.n;i++){
+        if(visible(i)) continue;
+        ctx.fillStyle=css("--muted");
+        ctx.beginPath(); ctx.arc(cx+curX[i]*s, cy+curY[i]*s, 1.7, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha=1;
+    }
+    for(let i=0;i<D.n;i++){
+      if(!visible(i)) continue;
+      ctx.fillStyle=pointColor(i);
+      ctx.beginPath(); ctx.arc(cx+curX[i]*s, cy+curY[i]*s, 2.6, 0, 6.2832); ctx.fill();
+    }
+  }
+  const hi = pinned!=null?pinned:hoverIdx;
+  if(hi>=0 && visible(hi)){
+    const x=cx+curX[hi]*s, y=cy+curY[hi]*s;
+    ctx.strokeStyle=css("--ink"); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,7,0,6.2832); ctx.stroke();
+  }
+}
+
+function nearest(mx,my){
+  const {cx,cy,s}=proj();
+  let best=-1,bd=1e9;
+  for(let i=0;i<D.n;i++){
+    if(!visible(i)) continue;
+    const dx=cx+curX[i]*s-mx, dy=cy+curY[i]*s-my, d=dx*dx+dy*dy;
+    if(d<bd){bd=d;best=i}
+  }
+  return bd<400?best:-1;
+}
+
+// ---- side panels --------------------------------------------------------
+function showCrop(i){
+  const meta=document.getElementById("hoverMeta"), img=document.getElementById("hoverImg");
+  if(i<0){ img.removeAttribute("src");
+    meta.innerHTML='<span class="hint">Hover a point to see the crop.</span>'; return; }
+  const c=D.points.cat[i], sem=D.semantics[D.cat_semantic[c]];
+  img.src=D.crop_dir+"/"+D.points.file[i];
+  const g=D.category_metrics.global_by_layer[LAYER][c];
+  const l=D.category_metrics.local_by_layer[LAYER][c];
+  meta.innerHTML=`<b>${D.categories[c]}</b><br>
+    <span style="color:${CDI_COLORS[sem]||CDI_COLORS.other}">&#9679;</span> ${sem.replace(/_/g," ")}<br>
+    category V<sub>c</sub> here: <b>${g.toFixed(2)}</b><br>
+    local kNN here: <b>${l.toFixed(2)}</b><br>
+    <span class="hint">${D.category_metrics.n_exemplars[c]} crops in category</span>`;
+}
+function drawMini(){
+  const c=document.getElementById("miniCurve"), x=c.getContext("2d");
+  const dpr=window.devicePixelRatio||1, w=c.parentElement.clientWidth-30, h=132;
+  c.width=w*dpr; c.height=h*dpr; c.style.width=w+"px"; c.style.height=h+"px";
+  x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+  const pad=22, n=13;
+  const px=i=>pad+(w-pad-8)*(i/(n-1)), py=v=>h-18-(h-30)*v;
+  x.strokeStyle=css("--grid"); x.lineWidth=1;
+  [0,0.5,1].forEach(v=>{x.beginPath();x.moveTo(pad,py(v));x.lineTo(w-8,py(v));x.stroke()});
+  const series=[["rho_global",GLOBAL_C],["rho_local",LOCAL_C]];
+  series.forEach(([k,col])=>{
+    x.strokeStyle=col; x.lineWidth=2; x.beginPath();
+    D.curves[k].forEach((v,i)=>{i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v))});
+    x.stroke();
+  });
+  x.fillStyle=css("--accent");
+  x.fillRect(px(LAYER)-1,10,2,h-28);
+  x.fillStyle=css("--muted"); x.font="10px system-ui";
+  x.fillText("0",4,py(0)+3); x.fillText("1",4,py(1)+3);
+  const st=document.getElementById("curveStats");
+  st.innerHTML=`<tr><td><span style="color:${GLOBAL_C}">&#9679;</span> global</td>
+      <td class="v">${D.curves.rho_global[LAYER].toFixed(3)}</td></tr>
+    <tr><td><span style="color:${LOCAL_C}">&#9679;</span> local (kNN)</td>
+      <td class="v">${D.curves.rho_local[LAYER].toFixed(3)}</td></tr>`;
+}
+function drawCat(){
+  const c=document.getElementById("miniCat"), x=c.getContext("2d");
+  const dpr=window.devicePixelRatio||1, w=c.parentElement.clientWidth-30, h=132;
+  c.width=w*dpr; c.height=h*dpr; c.style.width=w+"px"; c.style.height=h+"px";
+  x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+  const st=document.getElementById("catStats");
+  const cats=[...selCats];
+  if(cats.length!==1){
+    x.fillStyle=css("--muted"); x.font="12px system-ui";
+    x.fillText("Select one category to see", 6, 40);
+    x.fillText("its dispersion across depth.", 6, 58);
+    st.innerHTML=""; return;
+  }
+  const ci=cats[0];
+  const g=D.category_metrics.global_by_layer.map(a=>a[ci]);
+  const l=D.category_metrics.local_by_layer.map(a=>a[ci]);
+  const all=g.concat(l), lo=Math.min(...all), hi=Math.max(...all);
+  const pad=26, n=13;
+  const px=i=>pad+(w-pad-8)*(i/(n-1)), py=v=>h-18-(h-30)*((v-lo)/(hi-lo||1));
+  x.strokeStyle=css("--grid"); x.beginPath(); x.moveTo(pad,py(lo)); x.lineTo(w-8,py(lo)); x.stroke();
+  [[g,GLOBAL_C],[l,LOCAL_C]].forEach(([arr,col])=>{
+    x.strokeStyle=col; x.lineWidth=2; x.beginPath();
+    arr.forEach((v,i)=>{i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v))}); x.stroke();
+  });
+  x.fillStyle=css("--accent"); x.fillRect(px(LAYER)-1,10,2,h-28);
+  st.innerHTML=`<tr><td>category</td><td class="v">${D.categories[ci]}</td></tr>
+    <tr><td>published V<sub>c</sub> (CLIP)</td><td class="v">${D.category_metrics.published_global[ci].toFixed(2)}</td></tr>
+    <tr><td>published kNN (CLIP)</td><td class="v">${D.category_metrics.published_local[ci].toFixed(2)}</td></tr>
+    <tr><td>DINOv3 V<sub>c</sub></td><td class="v">${D.category_metrics.dinov3_global[ci].toFixed(2)}</td></tr>
+    <tr><td>n crops</td><td class="v">${D.category_metrics.n_exemplars[ci]}</td></tr>`;
+}
+function updateStats(){
+  let vis=0; const cs=new Set();
+  for(let i=0;i<D.n;i++) if(visible(i)){vis++;cs.add(D.points.cat[i])}
+  document.getElementById("fVis").textContent=vis.toLocaleString();
+  document.getElementById("fTot").textContent=D.n.toLocaleString();
+  document.getElementById("fCats").textContent=cs.size;
+  document.getElementById("fRhoG").textContent=D.curves.rho_global[LAYER].toFixed(3);
+  document.getElementById("fRhoL").textContent=D.curves.rho_local[LAYER].toFixed(3);
+}
+function drawLegend(){
+  const el=document.getElementById("legend");
+  if(COLORBY==="semantic"){
+    const present=[...new Set(D.cat_semantic)].sort();
+    el.innerHTML=present.map(si=>{
+      const s=D.semantics[si];
+      return `<div class="row"><span class="sw" style="background:${CDI_COLORS[s]||CDI_COLORS.other}"></span>${s.replace(/_/g," ")}</div>`;
+    }).join("");
+  }else{
+    const key=COLORBY==="global"?"global":"local";
+    const [lo,hi]=catMetricRange(key);
+    el.innerHTML=`<div class="row"><b>${key==="global"?"Global":"Local"} dispersion</b></div>
+      <div class="row"><span class="sw" style="background:${seqColor(0)}"></span>${lo.toFixed(1)} (tight)</div>
+      <div class="row"><span class="sw" style="background:${seqColor(1)}"></span>${hi.toFixed(1)} (spread)</div>`;
+  }
+}
+
+// ---- controls -----------------------------------------------------------
+function buildChips(){
+  const sc=document.getElementById("semChips");
+  sc.innerHTML=D.semantics.map((s,i)=>
+    `<button class="chip" data-si="${i}"><span class="sw" style="background:${CDI_COLORS[s]||CDI_COLORS.other}"></span>${s.replace(/_/g," ")}</button>`).join("");
+  sc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.si;
+    selSems.has(i)?selSems.delete(i):selSems.add(i);
+    b.classList.toggle("on"); draw(); updateStats();
+  });
+  const cc=document.getElementById("catChips");
+  cc.innerHTML=D.categories.map((c,i)=>`<button class="chip" data-ci="${i}">${c}</button>`).join("");
+  cc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.ci;
+    selCats.has(i)?selCats.delete(i):selCats.add(i);
+    b.classList.toggle("on"); draw(); updateStats(); drawCat();
+  });
+  document.getElementById("catCount").textContent=`(${D.categories.length})`;
+}
+document.getElementById("layer").oninput=e=>setLayer(+e.target.value,true);
+document.getElementById("colorSeg").onclick=e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  COLORBY=b.dataset.v;
+  [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  drawLegend(); draw();
+};
+document.getElementById("thumbSeg").onclick=e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  VIEW=b.dataset.v;
+  [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  draw();
+};
+document.getElementById("resetBtn").onclick=()=>{
+  selCats.clear(); selSems.clear(); pinned=null;
+  document.querySelectorAll(".chip.on").forEach(c=>c.classList.remove("on"));
+  draw(); updateStats(); drawCat(); showCrop(-1);
+};
+document.getElementById("playBtn").onclick=function(){
+  playing=!playing; this.textContent=playing?"Pause":"Play";
+  if(playing){
+    playTimer=setInterval(()=>{
+      const nx=(LAYER+1)%13; setLayer(nx,true);
+    },900);
+  }else clearInterval(playTimer);
+};
+cv.addEventListener("mousemove",e=>{
+  const r=cv.getBoundingClientRect();
+  const i=nearest(e.clientX-r.left, e.clientY-r.top);
+  if(i!==hoverIdx){hoverIdx=i; if(pinned==null) showCrop(i); draw()}
+});
+cv.addEventListener("mouseleave",()=>{hoverIdx=-1; if(pinned==null) showCrop(-1); draw()});
+cv.addEventListener("click",e=>{
+  const r=cv.getBoundingClientRect();
+  const i=nearest(e.clientX-r.left, e.clientY-r.top);
+  pinned = (i>=0 && pinned!==i) ? i : null;
+  showCrop(pinned!=null?pinned:hoverIdx); draw();
+});
+window.addEventListener("resize",()=>{resize();drawMini();drawCat()});
+
+// ---- boot ---------------------------------------------------------------
+(async function(){
+  D=await (await fetch("points.json")).json();
+  document.getElementById("fTot").textContent=D.n.toLocaleString();
+  document.getElementById("metaNote").innerHTML=
+    `${D.meta.model}. Source: ${D.meta.source}. ${D.meta.note} `+
+    `Layouts are per-block t-SNE (PCA-50 first), Procrustes-aligned to the previous block so the `+
+    `morph shows real reorganization rather than an arbitrary t-SNE rotation. `+
+    `Category dispersion metrics use the CCN 2026 pipeline unchanged (Euclidean, k = 5, cohort z-score).`;
+  buildChips(); drawLegend(); resize(); setLayer(0,false);
+})();
+</script>
+</body>
+</html>

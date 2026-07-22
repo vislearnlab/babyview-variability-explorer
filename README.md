@@ -147,9 +147,24 @@ data/ccn2026_results/     published metric CSVs, for comparison
 scripts/                  extraction, metrics, plotting
 results/clip_layers/      per-block activations (214 MB, gitignored)
 results/metrics/          layer_category_metrics.csv, baseline_..., layer_summary.csv
-results/figures/          fig1_emergence, fig2_frequency
+results/figures/          fig1_emergence, fig2_frequency, poster_layerwise
+explorer/                 interactive page: index.html + points.json + crops/
 ```
+
+## Explorer
+
+`explorer/` is an interactive page (same house style as the vislearnlab drawing
+explorers) with a **layer slider**: 5,921 crops laid out by t-SNE at each CLIP
+block, so you can watch the space reorganize from block 0 to the final embedding.
+Color by CDI semantic group or by dispersion, filter by category, hover for the
+crop. See [explorer/README.md](explorer/README.md).
+
+```
+cd explorer && python3 -m http.server 8000
+```
+
+Intended for GitHub Pages, so it can go on the poster as a QR link.
 
 ## Status
 
-Exploratory. A data explorer for these results is planned but not started.
+Exploratory follow-up, not yet reviewed by co-authors.

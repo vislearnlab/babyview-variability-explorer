@@ -5,16 +5,19 @@ in CLIP the variability structure actually comes from. Code and results are in
 this repo (`object-detection-clip-layers`); everything runs off the public
 release you built, so nothing here needs cluster access.
 
-Two things: a small data-hygiene item to fix, and the actual results.
+Two things: the results, and one small data-hygiene item.
 
 ---
 
-## 1. One stale directory in `data/shared_data_ccn_2026/valid7018/`
+## 1. Data hygiene: `data/shared_data_ccn_2026/valid7018/` never got re-exported
 
-**Short version:** the metric CSVs in the *shared* bundle are frozen at the
-pre-z-score-switch normalization. The copies under
-`analysis/ccn-2026/valid7018/` are correct and match the abstract. Nothing is
-wrong with the paper — it's just an export that didn't get re-run.
+**Nothing is wrong with the paper.** I want to lead with that, because I went
+looking at these files and briefly confused myself. Every number in the abstract
+checks out exactly, and I verified it line by line — see the table below.
+
+The only issue is that one *exported* directory in the repo was never refreshed
+after the normalization switch, so it disagrees with everything else. No
+analysis, figure, or embedding depends on it.
 
 How it happened, from the history:
 
@@ -32,6 +35,23 @@ So the shared copy still reflects the older normalization:
 | CLIP global, max (`book`) | 29.17 | **21.59** | **21.59** |
 | DINOv3 global, mean | 32.08 | **23.36** | **23.36** |
 | DINOv3 global, max (`car`) | 38.28 | **27.81** | **27.81** |
+
+### The paper is fine — every reported value verified
+
+| abstract reports | current `analysis/` copy |
+|---|---|
+| CLIP global mean 18.12, SD 1.84, [13.10, 21.59] | 18.12, 1.84, [13.10, 21.59] ✓ |
+| DINOv3 global mean 23.36, SD 1.76, [16.18, 27.81] | 23.36, 1.76, [16.18, 27.81] ✓ |
+| DINOv3 local mean 27.05, SD 2.60, [17.49, 33.29] | 27.05, 2.60, [17.49, 33.29] ✓ |
+| freq × dispersion, DINOv3 ρ = .26, p = .014 | ρ = .2654, p = .0141 ✓ |
+| cross-model ρ = .55 global / .63 local | .551 / .623 ✓ |
+| Fig 1A montages: clock, oven, chair, paper, book | `montage_low_to_high`, same order ✓ |
+| Fig 1A V_c: 23.55, 23.21, 25.53, 22.98, 22.88 | DINOv3: 23.55, 23.21, 25.53, 22.98, 22.88 ✓ |
+
+The stale values (24.46, 32.08) appear nowhere in the abstract. And the stale
+copy's montage list is `[glasses, oven, balloon, paper, book]`, which is *not*
+what Fig 1A shows — further confirmation the paper was built from the current
+pipeline.
 
 I also recomputed from the CLIP/DINOv3 vectors shipped in
 `shared_data_ccn_2026/public/`, using your `valid7018_category_metrics.py`
