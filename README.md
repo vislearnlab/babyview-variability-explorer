@@ -112,33 +112,32 @@ cross-model agreement the abstract reports is likely an underestimate of how
 much the two models actually share, and is partly a readout mismatch rather than
 a representational disagreement.
 
-## ⚠️ Discrepancy found: repo metric CSVs vs. the CCN abstract
+## Incidental finding: a stale export in `data/shared_data_ccn_2026/valid7018/`
 
-While validating, the published `valid7018` CSVs at `e4883c6` did **not**
-reproduce from the public embedding archive. Recomputing from the released
-vectors with the repo's own metric code gives values a near-constant factor
-lower:
+The `valid7018` metric CSVs exist in two places in the upstream repo, and they
+disagree. The `analysis/ccn-2026/valid7018/` copies are correct and match the
+abstract exactly; the `data/shared_data_ccn_2026/valid7018/` copies are frozen
+at an older normalization.
 
-| | published CSV @ e4883c6 | recomputed from public vectors | ratio |
+| | shared bundle | `analysis/` copy | abstract |
 |---|---|---|---|
-| CLIP global (72 cats) | 25.17 | 18.64 | 1.350 (sd .001) |
-| DINOv3 global (72 cats) | 32.62 | 23.75 | 1.373 (sd .003) |
+| CLIP global mean (85 cats) | 24.46 | **18.12** | **18.12** |
+| CLIP global max (`book`) | 29.17 | **21.59** | **21.59** |
+| DINOv3 global mean | 32.08 | **23.36** | **23.36** |
+| DINOv3 global max (`car`) | 38.28 | **27.81** | **27.81** |
 
-The ratio is constant to ~0.1%, and per-category **ranks are unaffected**
-(r = .9999), so no conclusion in the abstract changes.
+Cause, from the history: `1c504b4` (Jun 8) last wrote the shared bundle;
+`f535af9` immediately after ("Switch valid7018 normalization to cohort-internal
+feature-wise z-score") regenerated `analysis/ccn-2026/valid7018/`, the norm-stats
+JSON, `valid7018_paper_stats.json`, and the figures — but never re-exported to
+`data/shared_data_ccn_2026/`. 7 of 8 files in the shared directory are stale.
 
-But note which side matches the paper. The abstract reports CLIP global
-mean 18.12, range [13.10, **21.59**] and DINOv3 mean 23.36, range
-[16.18, **27.81**]. The recomputation from the public vectors gives maxima of
-exactly **21.59** and **27.81**; its means (18.64, 23.75) sit just above the
-paper's because the 13 low-dispersion body-part categories are excluded. The
-repo's current CSVs (24.46 / 32.08) match neither.
-
-**So the public embedding archive is consistent with the published abstract, and
-the metric CSVs at `e4883c6` appear to have been regenerated under a different
-normalization.** Worth tracking down before those CSVs are cited — the
-scaling is model-specific (1.350 vs 1.373), which points at the z-score
-mu/sigma being fit on a different cohort rather than a simple unit change.
+Recomputing from the vectors shipped in `shared_data_ccn_2026/public/` with the
+repo's own metric code reproduces the `analysis/` values to 5 decimals
+(ratio 1.00000), so the shared *embeddings* are current — only the CSVs beside
+them are not. The old normalization differs by a near-constant scale factor
+(1.351 CLIP, 1.376 DINOv3), so ranks are untouched (r = .9999) and no conclusion
+in the abstract is affected. See [NOTE_FOR_JANE.md](NOTE_FOR_JANE.md).
 
 ## Layout
 
