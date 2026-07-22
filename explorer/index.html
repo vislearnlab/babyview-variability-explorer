@@ -118,6 +118,7 @@ a{color:var(--s0)}
       <div class="tlabel">Color by</div>
       <div class="seg" id="colorSeg">
         <button data-v="semantic" class="on">CDI semantic</button>
+        <button data-v="category">Category</button>
         <button data-v="global">Global dispersion</button>
         <button data-v="local">Local dispersion</button>
       </div>
@@ -127,6 +128,13 @@ a{color:var(--s0)}
       <div class="seg" id="thumbSeg">
         <button data-v="dots" class="on">Dots</button>
         <button data-v="thumbs">Crops</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <div class="tlabel">Crop borders</div>
+      <div class="seg" id="borderSeg">
+        <button data-v="off" class="on">Off</button>
+        <button data-v="on">Color</button>
       </div>
     </div>
     <div class="tgroup">
@@ -199,8 +207,21 @@ const CDI_COLORS={animals:"#4DB8A8",body_parts:"#E87A5F",clothing:"#9B7EC8",food
   furniture_rooms:"#6BAB7A",household:"#D97B9E",outside:"#5B9BD5",people:"#E8C44C",
   toys:"#B07CC8",vehicles:"#6BA3D5",other:"#8B9A9E"};
 const GLOBAL_C="#1F4E79", LOCAL_C="#C0561F";
+// 72 distinct category colors: golden-angle hue spacing, cycled lightness/
+// saturation bands so neighbors in the list separate. Built once D is loaded.
+let CAT_PAL=null;
+function buildCatPalette(n){
+  const pal=[];
+  for(let i=0;i<n;i++){
+    const hue=(i*137.508)%360;
+    const sat=58+(i%3)*11;            // 58/69/80
+    const light=44+(i%4)*8;           // 44/52/60/68
+    pal.push(`hsl(${hue.toFixed(0)} ${sat}% ${light}%)`);
+  }
+  return pal;
+}
 
-let D=null, LAYER=0, COLORBY="semantic", VIEW="dots";
+let D=null, LAYER=0, COLORBY="semantic", VIEW="dots", BORDERS=false;
 let selCats=new Set(), selSems=new Set(), pinned=null, hoverIdx=-1;
 let curX=null, curY=null, animFrom=null, animTo=null, animT=1, animRAF=0;
 let playing=false, playTimer=0;
@@ -235,6 +256,9 @@ function pointColor(i){
   const c=D.points.cat[i];
   if(COLORBY==="semantic"){
     return CDI_COLORS[D.semantics[D.cat_semantic[c]]]||CDI_COLORS.other;
+  }
+  if(COLORBY==="category"){
+    return (CAT_PAL||(CAT_PAL=buildCatPalette(D.categories.length)))[c];
   }
   const key=COLORBY==="global"?"global":"local";
   const arr=D.category_metrics[key+"_by_layer"][LAYER];
@@ -305,6 +329,7 @@ function draw(){
   const zf=Math.sqrt(view.k);          // grow marks as you zoom in, sub-linearly
   if(VIEW==="thumbs"){
     const sz=13*Math.min(view.k,4);
+    const bw=Math.max(1,Math.min(3,1.2*zf));   // border scales with zoom
     for(let i=0;i<D.n;i++){
       if(!visible(i)) continue;
       const img=getImg(D.points.file[i]);
@@ -312,6 +337,10 @@ function draw(){
       const x=cx+curX[i]*s, y=cy+curY[i]*s;
       ctx.globalAlpha=0.95;
       ctx.drawImage(img,x-sz/2,y-sz/2,sz,sz);
+      if(BORDERS){
+        ctx.globalAlpha=1; ctx.lineWidth=bw; ctx.strokeStyle=pointColor(i);
+        ctx.strokeRect(x-sz/2,y-sz/2,sz,sz);
+      }
     }
     ctx.globalAlpha=1;
   }else{
@@ -479,7 +508,20 @@ function updateStats(){
 }
 function drawLegend(){
   const el=document.getElementById("legend");
-  if(COLORBY==="semantic"){
+  if(COLORBY==="category"){
+    // 72 swatches is too many for a fixed legend; key the selected ones (or a
+    // hint), since each category already has its own hue and hover names it.
+    const pal=CAT_PAL||(CAT_PAL=buildCatPalette(D.categories.length));
+    const sel=[...selCats];
+    if(sel.length){
+      el.innerHTML=`<div class="row"><b>Category (${sel.length} selected)</b></div>`+
+        sel.slice(0,12).map(ci=>`<div class="row"><span class="sw" style="background:${pal[ci]}"></span>${D.categories[ci]}</div>`).join("")+
+        (sel.length>12?`<div class="row" style="color:var(--muted)">+${sel.length-12} more</div>`:"");
+    }else{
+      el.innerHTML=`<div class="row"><b>Category</b></div>`+
+        `<div class="row" style="color:var(--muted)">72 distinct hues · hover to name · filter with the chips below</div>`;
+    }
+  }else if(COLORBY==="semantic"){
     const present=[...new Set(D.cat_semantic)].sort();
     el.innerHTML=present.map(si=>{
       const s=D.semantics[si];
@@ -505,11 +547,14 @@ function buildChips(){
     b.classList.toggle("on"); draw(); updateStats();
   });
   const cc=document.getElementById("catChips");
-  cc.innerHTML=D.categories.map((c,i)=>`<button class="chip" data-ci="${i}">${c}</button>`).join("");
+  const pal=CAT_PAL||(CAT_PAL=buildCatPalette(D.categories.length));
+  cc.innerHTML=D.categories.map((c,i)=>
+    `<button class="chip" data-ci="${i}"><span class="sw" style="background:${pal[i]}"></span>${c}</button>`).join("");
   cc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     const i=+b.dataset.ci;
     selCats.has(i)?selCats.delete(i):selCats.add(i);
     b.classList.toggle("on"); draw(); updateStats(); drawCat();
+    if(COLORBY==="category") drawLegend();
   });
   document.getElementById("catCount").textContent=`(${D.categories.length})`;
 }
@@ -530,6 +575,16 @@ document.getElementById("thumbSeg").onclick=e=>{
   const b=e.target.closest("button"); if(!b) return;
   VIEW=b.dataset.v;
   [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  draw();
+};
+document.getElementById("borderSeg").onclick=e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  BORDERS=b.dataset.v==="on";
+  [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  if(BORDERS && VIEW!=="thumbs"){   // borders only apply to crops; flip the view
+    VIEW="thumbs";
+    document.querySelectorAll("#thumbSeg button").forEach(x=>x.classList.toggle("on",x.dataset.v==="thumbs"));
+  }
   draw();
 };
 // ---- theme -------------------------------------------------------------
