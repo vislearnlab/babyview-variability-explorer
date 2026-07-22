@@ -77,6 +77,18 @@ table.stats{width:100%;border-collapse:collapse;font-size:12.5px}
 table.stats td{padding:3px 0;color:var(--ink2)}
 table.stats td.v{text-align:right;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 canvas.mini{display:block;width:100%;height:132px}
+#catCompare{display:flex;flex-direction:column;gap:11px;max-height:340px;overflow-y:auto}
+.ccol{display:grid;grid-template-columns:14px 1fr;gap:8px;align-items:start}
+.ccol .dot{width:11px;height:11px;border-radius:3px;margin-top:3px}
+.ccol .cname{font-weight:640;color:var(--ink);font-size:13.5px;margin-bottom:4px}
+.metric{display:grid;grid-template-columns:64px 1fr 52px;align-items:center;gap:7px;margin:2px 0}
+.metric .mlab{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.metric .track{height:7px;border-radius:4px;background:var(--plane);border:1px solid var(--ring);overflow:hidden}
+.metric .fill{height:100%;border-radius:4px}
+.metric .mval{text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.chead{display:grid;grid-template-columns:64px 1fr 52px;gap:7px;font-size:10px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.05em;padding-left:22px;margin-bottom:2px}
+.chead span:last-child{text-align:right}
 .foot{display:flex;flex-wrap:wrap;gap:18px;padding:11px 16px;margin-top:14px;
   background:var(--surface);border:1px solid var(--ring);border-radius:12px;font-size:13px;color:var(--ink2)}
 .foot b{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -168,9 +180,8 @@ a{color:var(--s0)}
         <table class="stats" id="curveStats"></table>
       </div>
       <div class="card pad">
-        <h3>Selected category</h3>
-        <canvas class="mini" id="miniCat"></canvas>
-        <table class="stats" id="catStats"></table>
+        <h3>Selected categories <span id="catHint" class="hint"></span></h3>
+        <div id="catCompare"></div>
       </div>
     </div>
   </div>
@@ -388,36 +399,57 @@ function drawMini(){
     <tr><td><span style="color:${LOCAL_C}">&#9679;</span> local (kNN)</td>
       <td class="v">${D.curves.rho_local[LAYER].toFixed(3)}</td></tr>`;
 }
+// Cohort-wide ranges, so each category's bars read against all 72 categories.
+let MRANGE=null;
+function metricRanges(){
+  if(MRANGE) return MRANGE;
+  const cm=D.category_metrics;
+  const freq=cm.frequency.filter(v=>v!=null);
+  const rng=a=>[Math.min(...a),Math.max(...a)];
+  MRANGE={frequency:rng(freq), global:rng(cm.published_global), local:rng(cm.published_local)};
+  return MRANGE;
+}
+// "Selected categories" panel: frequency + the two diversity scores (global
+// distance-to-centroid and local kNN) for every selected category, each shown
+// against the full-cohort range so categories are directly comparable.
 function drawCat(){
-  const c=document.getElementById("miniCat"), x=c.getContext("2d");
-  const dpr=window.devicePixelRatio||1, w=c.parentElement.clientWidth-30, h=132;
-  c.width=w*dpr; c.height=h*dpr; c.style.width=w+"px"; c.style.height=h+"px";
-  x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
-  const st=document.getElementById("catStats");
-  const cats=[...selCats];
-  if(cats.length!==1){
-    x.fillStyle=css("--muted"); x.font="12px system-ui";
-    x.fillText("Select one category to see", 6, 40);
-    x.fillText("its dispersion across depth.", 6, 58);
-    st.innerHTML=""; return;
+  const host=document.getElementById("catCompare"), hd=document.getElementById("catHint");
+  const cm=D.category_metrics, R=metricRanges();
+  // selected chips; fall back to a pinned/hovered point's category so the panel
+  // is never empty right after a click.
+  let cats=[...selCats];
+  if(!cats.length && pinned!=null) cats=[D.points.cat[pinned]];
+  else if(!cats.length && hoverIdx>=0) cats=[D.points.cat[hoverIdx]];
+  if(!cats.length){
+    host.innerHTML='<div class="hint">Select one or more categories (chips above) '+
+      'to compare their frequency and diversity. Hovering a point previews its category.</div>';
+    if(hd) hd.textContent=""; return;
   }
-  const ci=cats[0];
-  const g=D.category_metrics.global_by_layer.map(a=>a[ci]);
-  const l=D.category_metrics.local_by_layer.map(a=>a[ci]);
-  const all=g.concat(l), lo=Math.min(...all), hi=Math.max(...all);
-  const pad=26, n=13;
-  const px=i=>pad+(w-pad-8)*(i/(n-1)), py=v=>h-18-(h-30)*((v-lo)/(hi-lo||1));
-  x.strokeStyle=css("--grid"); x.beginPath(); x.moveTo(pad,py(lo)); x.lineTo(w-8,py(lo)); x.stroke();
-  [[g,GLOBAL_C],[l,LOCAL_C]].forEach(([arr,col])=>{
-    x.strokeStyle=col; x.lineWidth=2; x.beginPath();
-    arr.forEach((v,i)=>{i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v))}); x.stroke();
-  });
-  x.fillStyle=css("--accent"); x.fillRect(px(LAYER)-1,10,2,h-28);
-  st.innerHTML=`<tr><td>category</td><td class="v">${D.categories[ci]}</td></tr>
-    <tr><td>published V<sub>c</sub> (CLIP)</td><td class="v">${D.category_metrics.published_global[ci].toFixed(2)}</td></tr>
-    <tr><td>published kNN (CLIP)</td><td class="v">${D.category_metrics.published_local[ci].toFixed(2)}</td></tr>
-    <tr><td>DINOv3 V<sub>c</sub></td><td class="v">${D.category_metrics.dinov3_global[ci].toFixed(2)}</td></tr>
-    <tr><td>n crops</td><td class="v">${D.category_metrics.n_exemplars[ci]}</td></tr>`;
+  if(hd) hd.textContent = "("+cats.length+")";
+  // rank by global diversity, most-dispersed first
+  cats.sort((a,b)=>cm.published_global[b]-cm.published_global[a]);
+
+  const norm=(v,[lo,hi])=>hi>lo?Math.max(0,Math.min(1,(v-lo)/(hi-lo))):0.5;
+  const bar=(lab,val,rng,col,fmt)=>{
+    const pct=(norm(val,rng)*100).toFixed(1);
+    return `<div class="metric"><span class="mlab">${lab}</span>`+
+      `<span class="track"><span class="fill" style="width:${pct}%;background:${col}"></span></span>`+
+      `<span class="mval">${fmt(val)}</span></div>`;
+  };
+  const pct3=v=>v==null?"—":(v*100).toFixed(2)+"%";
+  const f2=v=>v.toFixed(2);
+  host.innerHTML=`<div class="chead"><span></span><span>frequency &amp; diversity vs. all 72</span><span></span></div>`+
+    cats.map(ci=>{
+      const sem=D.semantics[D.cat_semantic[ci]], col=CDI_COLORS[sem]||CDI_COLORS.other;
+      const freq=cm.frequency[ci];
+      return `<div class="ccol"><span class="dot" style="background:${col}"></span><div>`+
+        `<div class="cname">${D.categories[ci]} `+
+          `<span class="hint" style="font-weight:400">· ${sem.replace(/_/g," ")} · n=${cm.n_exemplars[ci]}</span></div>`+
+        bar("freq", freq, R.frequency, "var(--muted)", pct3)+
+        bar("global", cm.published_global[ci], R.global, GLOBAL_C, f2)+
+        bar("local", cm.published_local[ci], R.local, LOCAL_C, f2)+
+        `</div></div>`;
+    }).join("");
 }
 function updateStats(){
   let vis=0; const cs=new Set();
@@ -549,16 +581,18 @@ cv.addEventListener("mousemove",e=>{
     return;
   }
   const i=nearest(mx,my);
-  if(i!==hoverIdx){hoverIdx=i; if(pinned==null) showCrop(i); draw()}
+  if(i!==hoverIdx){hoverIdx=i; if(pinned==null) showCrop(i); draw();
+    if(!selCats.size) drawCat();}   // preview hovered category only when none pinned/selected
 });
 cv.addEventListener("mouseleave",()=>{hoverIdx=-1; cv.style.cursor="crosshair";
-  if(pinned==null && !dragging) showCrop(-1); draw()});
+  if(pinned==null && !dragging){showCrop(-1); if(!selCats.size) drawCat();} draw()});
 cv.addEventListener("click",e=>{
   if(dragMoved){dragMoved=false; return;}   // was a pan, not a pin
   const r=cv.getBoundingClientRect();
   const i=nearest(e.clientX-r.left, e.clientY-r.top);
   pinned = (i>=0 && pinned!==i) ? i : null;
   showCrop(pinned!=null?pinned:hoverIdx); draw();
+  if(!selCats.size) drawCat();
 });
 cv.addEventListener("dblclick",()=>resetView());
 window.addEventListener("resize",()=>{resize();drawMini();drawCat()});
