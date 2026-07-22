@@ -1,0 +1,17 @@
+{
+  "generated_utc": "2026-07-22T19:33:23.307684+00:00",
+  "arch": "ViT-B-32-quickgelu",
+  "pretrained": "openai",
+  "n_blocks": 12,
+  "n_exemplars": 5921,
+  "n_categories": 72,
+  "device": "mps",
+  "readouts": {
+    "cls_L{i}": "CLS token at output of block i (768-d)",
+    "mean_L{i}": "mean of 49 patch tokens at output of block i (768-d)",
+    "final": "ln_post(CLS) @ proj -- encode_image(), as used in the CCN paper (512-d)"
+  },
+  "source_crops": "data/valid7018_public/crops (public privacy-filtered release)",
+  "dtype": "float16",
+  "note": "Raw activations, NOT z-scored. Normalization is applied per-analysis."
+}

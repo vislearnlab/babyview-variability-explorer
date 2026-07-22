@@ -1,0 +1,12 @@
+{
+  "generated_utc": "2026-07-22T19:40:36.658934+00:00",
+  "k": 5,
+  "n_exemplars": 5921,
+  "n_categories": 72,
+  "metric": "euclidean",
+  "layer_normalization": "featurewise_zscore_within_valid7018_public_cohort_5921",
+  "baseline_normalization": "as-shipped (featurewise z-score fit on full 7,018)",
+  "metric_code": "verbatim copy of analysis/ccn-2026/scripts/valid7018_category_metrics.py @ e4883c6",
+  "caveat_dimensionality": "Euclidean distance scales ~sqrt(d); block readouts are 768-d vs 512-d for `final`. Compare readouts via across-category rank correlations, not raw V_c.",
+  "caveat_cohort": "72 public categories only; body parts and glasses are excluded from the public release for privacy. Paper reports 85."
+}

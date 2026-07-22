@@ -1,0 +1,12 @@
+# Large derived activations — regenerate with scripts/extract_clip_layers.py
+results/clip_layers/*.npy
+results/extract_log.txt
+
+# Unzipped copies of the public archives (zips are tracked)
+data/valid7018_public/crops/
+data/valid7018_public/embeddings/
+
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store

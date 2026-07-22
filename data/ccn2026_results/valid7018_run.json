@@ -1,0 +1,49 @@
+{
+  "cohort": "valid85_sampled_per_file_validated_clip_filter_list",
+  "embedding_source": "valid7018_bv_embeddings.zip",
+  "zip_path": "data/shared_data_ccn_2026/embeddings/valid7018_bv_embeddings.zip",
+  "n_exemplars_in_zip": 7018,
+  "n_rows_sampled_validated": null,
+  "embedding_metric": "euclidean_featurewise_global_normalized",
+  "norm_stats_json": "analysis/ccn-2026/valid7018/valid7018_embedding_norm_stats.json",
+  "n_exemplars_loaded_clip": 7018,
+  "n_exemplars_loaded_dinov3": 7018,
+  "n_categories_clip_metrics": 85,
+  "n_categories_dinov3_metrics": 85,
+  "n_categories_merged": 85,
+  "k": 5,
+  "global_dispersion": "mean L2 distance to category centroid",
+  "local_knn": "mean kNN distance (k=5)",
+  "correlations": [
+    {
+      "comparison": "clip_within",
+      "spearman_rho": 0.9479382450654681,
+      "p_value": 5.2076118126068195e-43,
+      "n_categories": 85
+    },
+    {
+      "comparison": "dinov3_within",
+      "spearman_rho": 0.8508696501856556,
+      "p_value": 6.43265667662362e-25,
+      "n_categories": 85
+    },
+    {
+      "comparison": "cross_global",
+      "spearman_rho": 0.545124096150088,
+      "p_value": 6.882975677965644e-08,
+      "n_categories": 85
+    },
+    {
+      "comparison": "cross_local_knn",
+      "spearman_rho": 0.6262849325776823,
+      "p_value": 1.4515224464321168e-10,
+      "n_categories": 85
+    }
+  ],
+  "outputs": {
+    "clip_metrics": "bv_valid7018_clip_local_global_k5.csv",
+    "dinov3_metrics": "bv_valid7018_dinov3_local_global_k5.csv",
+    "merged": "bv_valid7018_clip_vs_dinov3_local_global_k5.csv",
+    "correlations": "bv_valid7018_correlations_k5.csv"
+  }
+}
