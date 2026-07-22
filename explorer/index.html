@@ -77,18 +77,14 @@ table.stats{width:100%;border-collapse:collapse;font-size:12.5px}
 table.stats td{padding:3px 0;color:var(--ink2)}
 table.stats td.v{text-align:right;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 canvas.mini{display:block;width:100%;height:132px}
-#catCompare{display:flex;flex-direction:column;gap:11px;max-height:340px;overflow-y:auto}
-.ccol{display:grid;grid-template-columns:14px 1fr;gap:8px;align-items:start}
-.ccol .dot{width:11px;height:11px;border-radius:3px;margin-top:3px}
-.ccol .cname{font-weight:640;color:var(--ink);font-size:13.5px;margin-bottom:4px}
-.metric{display:grid;grid-template-columns:64px 1fr 52px;align-items:center;gap:7px;margin:2px 0}
-.metric .mlab{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.metric .track{height:7px;border-radius:4px;background:var(--plane);border:1px solid var(--ring);overflow:hidden}
-.metric .fill{height:100%;border-radius:4px}
-.metric .mval{text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
-.chead{display:grid;grid-template-columns:64px 1fr 52px;gap:7px;font-size:10px;color:var(--muted);
-  text-transform:uppercase;letter-spacing:.05em;padding-left:22px;margin-bottom:2px}
-.chead span:last-child{text-align:right}
+#catScatter{display:block;width:100%;height:240px}
+#catList{display:flex;flex-direction:column;gap:5px;max-height:190px;overflow-y:auto;margin-top:10px}
+.crow{display:grid;grid-template-columns:13px 1fr 46px 46px 52px;gap:8px;align-items:center;font-size:12.5px}
+.crow .dot{width:11px;height:11px;border-radius:3px}
+.crow .cn{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .cv{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.crow.head{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.crow.head .cv{color:var(--muted)}
 .foot{display:flex;flex-wrap:wrap;gap:18px;padding:11px 16px;margin-top:14px;
   background:var(--surface);border:1px solid var(--ring);border-radius:12px;font-size:13px;color:var(--ink2)}
 .foot b{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -181,7 +177,13 @@ a{color:var(--s0)}
       </div>
       <div class="card pad">
         <h3>Selected categories <span id="catHint" class="hint"></span></h3>
-        <div id="catCompare"></div>
+        <div class="seg" id="axisSeg" style="margin-bottom:10px">
+          <button data-v="freq_global" class="on">freq × global</button>
+          <button data-v="freq_local">freq × local</button>
+          <button data-v="global_local">global × local</button>
+        </div>
+        <canvas id="catScatter"></canvas>
+        <div id="catList"></div>
       </div>
     </div>
   </div>
@@ -399,57 +401,102 @@ function drawMini(){
     <tr><td><span style="color:${LOCAL_C}">&#9679;</span> local (kNN)</td>
       <td class="v">${D.curves.rho_local[LAYER].toFixed(3)}</td></tr>`;
 }
-// Cohort-wide ranges, so each category's bars read against all 72 categories.
-let MRANGE=null;
-function metricRanges(){
-  if(MRANGE) return MRANGE;
-  const cm=D.category_metrics;
-  const freq=cm.frequency.filter(v=>v!=null);
-  const rng=a=>[Math.min(...a),Math.max(...a)];
-  MRANGE={frequency:rng(freq), global:rng(cm.published_global), local:rng(cm.published_local)};
-  return MRANGE;
+let AXISMODE="freq_global";
+const AXES={
+  // key -> {x, y, xlab, ylab, xlog}
+  freq_global:{x:"frequency", y:"published_global", xlab:"frequency (log)", ylab:"global dispersion", xlog:true},
+  freq_local: {x:"frequency", y:"published_local",  xlab:"frequency (log)", ylab:"local dispersion (kNN)", xlog:true},
+  global_local:{x:"published_global", y:"published_local", xlab:"global dispersion", ylab:"local dispersion (kNN)", xlog:false},
+};
+function spearman(xs,ys){
+  const rank=a=>{const idx=a.map((v,i)=>[v,i]).sort((p,q)=>p[0]-q[0]);
+    const r=new Array(a.length); let i=0;
+    while(i<idx.length){let j=i; while(j+1<idx.length&&idx[j+1][0]===idx[i][0])j++;
+      const avg=(i+j)/2+1; for(let k=i;k<=j;k++)r[idx[k][1]]=avg; i=j+1;} return r;};
+  const rx=rank(xs), ry=rank(ys), n=xs.length;
+  const mx=rx.reduce((a,b)=>a+b)/n, my=ry.reduce((a,b)=>a+b)/n;
+  let sxy=0,sx=0,sy=0;
+  for(let i=0;i<n;i++){const dx=rx[i]-mx,dy=ry[i]-my; sxy+=dx*dy; sx+=dx*dx; sy+=dy*dy;}
+  return sxy/Math.sqrt(sx*sy||1);
 }
-// "Selected categories" panel: frequency + the two diversity scores (global
-// distance-to-centroid and local kNN) for every selected category, each shown
-// against the full-cohort range so categories are directly comparable.
+// "Selected categories" scatter: every one of the 72 categories placed in the
+// frequency x diversity plane (as in the paper's Fig 1C); selected categories
+// highlighted and labeled. Axis toggle switches which two quantities are shown.
 function drawCat(){
-  const host=document.getElementById("catCompare"), hd=document.getElementById("catHint");
-  const cm=D.category_metrics, R=metricRanges();
-  // selected chips; fall back to a pinned/hovered point's category so the panel
-  // is never empty right after a click.
-  let cats=[...selCats];
-  if(!cats.length && pinned!=null) cats=[D.points.cat[pinned]];
-  else if(!cats.length && hoverIdx>=0) cats=[D.points.cat[hoverIdx]];
-  if(!cats.length){
-    host.innerHTML='<div class="hint">Select one or more categories (chips above) '+
-      'to compare their frequency and diversity. Hovering a point previews its category.</div>';
-    if(hd) hd.textContent=""; return;
-  }
-  if(hd) hd.textContent = "("+cats.length+")";
-  // rank by global diversity, most-dispersed first
-  cats.sort((a,b)=>cm.published_global[b]-cm.published_global[a]);
+  const cv2=document.getElementById("catScatter"), x=cv2.getContext("2d");
+  const list=document.getElementById("catList"), hd=document.getElementById("catHint");
+  const cm=D.category_metrics, A=AXES[AXISMODE];
+  const dpr=window.devicePixelRatio||1, w=Math.max(120,cv2.parentElement.clientWidth-30), h=240;
+  cv2.width=w*dpr; cv2.height=h*dpr; cv2.style.width=w+"px"; cv2.style.height=h+"px";
+  x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
 
-  const norm=(v,[lo,hi])=>hi>lo?Math.max(0,Math.min(1,(v-lo)/(hi-lo))):0.5;
-  const bar=(lab,val,rng,col,fmt)=>{
-    const pct=(norm(val,rng)*100).toFixed(1);
-    return `<div class="metric"><span class="mlab">${lab}</span>`+
-      `<span class="track"><span class="fill" style="width:${pct}%;background:${col}"></span></span>`+
-      `<span class="mval">${fmt(val)}</span></div>`;
-  };
-  const pct3=v=>v==null?"—":(v*100).toFixed(2)+"%";
-  const f2=v=>v.toFixed(2);
-  host.innerHTML=`<div class="chead"><span></span><span>frequency &amp; diversity vs. all 72</span><span></span></div>`+
-    cats.map(ci=>{
-      const sem=D.semantics[D.cat_semantic[ci]], col=CDI_COLORS[sem]||CDI_COLORS.other;
-      const freq=cm.frequency[ci];
-      return `<div class="ccol"><span class="dot" style="background:${col}"></span><div>`+
-        `<div class="cname">${D.categories[ci]} `+
-          `<span class="hint" style="font-weight:400">· ${sem.replace(/_/g," ")} · n=${cm.n_exemplars[ci]}</span></div>`+
-        bar("freq", freq, R.frequency, "var(--muted)", pct3)+
-        bar("global", cm.published_global[ci], R.global, GLOBAL_C, f2)+
-        bar("local", cm.published_local[ci], R.local, LOCAL_C, f2)+
-        `</div></div>`;
-    }).join("");
+  let sel=new Set(selCats);
+  if(!sel.size && pinned!=null) sel.add(D.points.cat[pinned]);
+  else if(!sel.size && hoverIdx>=0) sel.add(D.points.cat[hoverIdx]);
+  if(hd) hd.textContent = selCats.size ? "("+selCats.size+")" : "";
+
+  // all 72 categories with both coords present
+  const xf=v=>A.xlog?Math.log10(v):v;
+  const pts=[];
+  for(let ci=0;ci<D.categories.length;ci++){
+    const xv=cm[A.x][ci], yv=cm[A.y][ci];
+    if(xv==null||yv==null) continue;
+    pts.push({ci, xx:xf(xv), yy:yv, rawx:xv, rawy:yv});
+  }
+  const xs=pts.map(p=>p.xx), ys=pts.map(p=>p.yy);
+  const xlo=Math.min(...xs), xhi=Math.max(...xs), ylo=Math.min(...ys), yhi=Math.max(...ys);
+  const padL=34, padB=26, padT=10, padR=10;
+  const PX=v=>padL+(w-padL-padR)*((v-xlo)/(xhi-xlo||1));
+  const PY=v=>h-padB-(h-padB-padT)*((v-ylo)/(yhi-ylo||1));
+
+  // axes
+  x.strokeStyle=css("--grid"); x.lineWidth=1;
+  x.beginPath(); x.moveTo(padL,padT); x.lineTo(padL,h-padB); x.lineTo(w-padR,h-padB); x.stroke();
+  x.fillStyle=css("--muted"); x.font="10px system-ui";
+  x.textAlign="center"; x.fillText(A.xlab, padL+(w-padL-padR)/2, h-6);
+  x.save(); x.translate(11,padT+(h-padB-padT)/2); x.rotate(-Math.PI/2);
+  x.fillText(A.ylab,0,0); x.restore(); x.textAlign="left";
+
+  // all categories faint; selected pop
+  for(const p of pts){
+    if(sel.has(p.ci)) continue;
+    x.fillStyle=css("--axis"); x.globalAlpha=0.5;
+    x.beginPath(); x.arc(PX(p.xx),PY(p.yy),2.4,0,6.2832); x.fill();
+  }
+  x.globalAlpha=1;
+  for(const p of pts){
+    if(!sel.has(p.ci)) continue;
+    const sem=D.semantics[D.cat_semantic[p.ci]], col=CDI_COLORS[sem]||CDI_COLORS.other;
+    const px=PX(p.xx), py=PY(p.yy);
+    x.fillStyle=col; x.beginPath(); x.arc(px,py,4.5,0,6.2832); x.fill();
+    x.strokeStyle=css("--surface"); x.lineWidth=1.5; x.stroke();
+    x.fillStyle=css("--ink"); x.font="600 11px system-ui";
+    const lab=D.categories[p.ci], tw=x.measureText(lab).width;
+    let lx=px+7; if(lx+tw>w-padR) lx=px-7-tw;
+    x.fillText(lab, lx, py+3.5);
+  }
+
+  // relationship across all 72 (matches the paper's framing)
+  const rho=spearman(xs,ys);
+  x.fillStyle=css("--ink2"); x.font="10px system-ui"; x.textAlign="right";
+  x.fillText("all 72: rho = "+rho.toFixed(2), w-padR-2, padT+9); x.textAlign="left";
+
+  // value list for the selected set
+  const cats=[...sel].sort((a,b)=>cm.published_global[b]-cm.published_global[a]);
+  const pct=v=>v==null?"—":(v*100).toFixed(2)+"%";
+  list.innerHTML = cats.length
+    ? `<div class="crow head"><span></span><span class="cn">category</span>`+
+        `<span class="cv">freq</span><span class="cv">global</span><span class="cv">local</span></div>`+
+      cats.map(ci=>{
+        const sem=D.semantics[D.cat_semantic[ci]], col=CDI_COLORS[sem]||CDI_COLORS.other;
+        return `<div class="crow"><span class="dot" style="background:${col}"></span>`+
+          `<span class="cn">${D.categories[ci]}</span>`+
+          `<span class="cv">${pct(cm.frequency[ci])}</span>`+
+          `<span class="cv">${cm.published_global[ci].toFixed(2)}</span>`+
+          `<span class="cv">${cm.published_local[ci].toFixed(2)}</span></div>`;
+      }).join("")
+    : '<div class="hint">Select categories (chips above) to highlight them. '+
+      'All 72 are plotted; hovering a point previews its category.</div>';
 }
 function updateStats(){
   let vis=0; const cs=new Set();
@@ -496,6 +543,12 @@ function buildChips(){
   });
   document.getElementById("catCount").textContent=`(${D.categories.length})`;
 }
+document.getElementById("axisSeg").onclick=e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  AXISMODE=b.dataset.v;
+  [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  drawCat();
+};
 document.getElementById("layer").oninput=e=>setLayer(+e.target.value,true);
 document.getElementById("colorSeg").onclick=e=>{
   const b=e.target.closest("button"); if(!b) return;
