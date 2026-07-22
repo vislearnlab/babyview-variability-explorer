@@ -92,7 +92,7 @@ a{color:var(--s0)}
     <b>72 CDI noun categories</b>. Each point is one crop, laid out by t-SNE of its CLIP
     representation <b>at a chosen transformer block</b>. Drag the layer slider to watch the
     space reorganize from early visual features to the final semantic embedding used in the
-    CCN 2026 abstract.
+    CCN 2026 abstract. <b>Scroll to zoom</b>, drag to pan, double-click to reset.
   </div>
 </header>
 
@@ -124,6 +124,14 @@ a{color:var(--s0)}
     <div class="tgroup">
       <div class="tlabel">Reset</div>
       <button class="ghost" id="resetBtn">Clear filters</button>
+    </div>
+    <div class="tgroup">
+      <div class="tlabel">Theme</div>
+      <div class="seg" id="themeSeg">
+        <button data-v="auto" class="on">Auto</button>
+        <button data-v="light">Light</button>
+        <button data-v="dark">Dark</button>
+      </div>
     </div>
   </div>
 
@@ -267,12 +275,18 @@ function resize(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   draw();
 }
-function proj(){
+let view={k:1,tx:0,ty:0};   // zoom multiplier + pan offset (screen px)
+function baseProj(){
   const r=cv.parentElement.getBoundingClientRect();
   const pad=34, w=r.width-pad*2, h=660-pad*2;
   const s=Math.min(w,h)/210;
   return {cx:r.width/2, cy:330, s};
 }
+function proj(){
+  const b=baseProj();
+  return {cx:b.cx+view.tx, cy:b.cy+view.ty, s:b.s*view.k};
+}
+function resetView(){ view={k:1,tx:0,ty:0}; draw(); }
 function draw(){
   if(!D||!curX) return;
   const r=cv.parentElement.getBoundingClientRect();
@@ -280,12 +294,14 @@ function draw(){
   const {cx,cy,s}=proj();
   const anyFilter = selCats.size||selSems.size;
 
+  const zf=Math.sqrt(view.k);          // grow marks as you zoom in, sub-linearly
   if(VIEW==="thumbs"){
+    const sz=13*Math.min(view.k,4);
     for(let i=0;i<D.n;i++){
       if(!visible(i)) continue;
       const img=getImg(D.points.file[i]);
       if(!img.complete||!img.naturalWidth) continue;
-      const x=cx+curX[i]*s, y=cy+curY[i]*s, sz=13;
+      const x=cx+curX[i]*s, y=cy+curY[i]*s;
       ctx.globalAlpha=0.95;
       ctx.drawImage(img,x-sz/2,y-sz/2,sz,sz);
     }
@@ -297,21 +313,27 @@ function draw(){
       for(let i=0;i<D.n;i++){
         if(visible(i)) continue;
         ctx.fillStyle=css("--muted");
-        ctx.beginPath(); ctx.arc(cx+curX[i]*s, cy+curY[i]*s, 1.7, 0, 6.2832); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx+curX[i]*s, cy+curY[i]*s, 1.7*zf, 0, 6.2832); ctx.fill();
       }
       ctx.globalAlpha=1;
     }
     for(let i=0;i<D.n;i++){
       if(!visible(i)) continue;
       ctx.fillStyle=pointColor(i);
-      ctx.beginPath(); ctx.arc(cx+curX[i]*s, cy+curY[i]*s, 2.6, 0, 6.2832); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx+curX[i]*s, cy+curY[i]*s, 2.6*zf, 0, 6.2832); ctx.fill();
     }
   }
   const hi = pinned!=null?pinned:hoverIdx;
   if(hi>=0 && visible(hi)){
     const x=cx+curX[hi]*s, y=cy+curY[hi]*s;
     ctx.strokeStyle=css("--ink"); ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(x,y,7,0,6.2832); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x,y,Math.max(7,3*zf),0,6.2832); ctx.stroke();
+  }
+  // zoom indicator
+  if(view.k>1.01){
+    ctx.fillStyle=css("--ink2"); ctx.font="12px system-ui"; ctx.textAlign="right";
+    ctx.fillText(view.k.toFixed(1)+"×  ·  double-click to reset", r.width-14, 660-14);
+    ctx.textAlign="left";
   }
 }
 
@@ -455,6 +477,32 @@ document.getElementById("thumbSeg").onclick=e=>{
   [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
   draw();
 };
+// ---- theme -------------------------------------------------------------
+function applyTheme(mode){
+  const root=document.documentElement;
+  if(mode==="auto") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme",mode);
+  try{localStorage.setItem("bvexpl-theme",mode)}catch(e){}
+  // canvases read CSS vars, so repaint after the variables switch (once loaded)
+  if(D) requestAnimationFrame(()=>{draw();drawMini();drawCat();drawLegend()});
+}
+document.getElementById("themeSeg").onclick=e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  applyTheme(b.dataset.v);
+};
+(function initTheme(){
+  let mode="auto"; try{mode=localStorage.getItem("bvexpl-theme")||"auto"}catch(e){}
+  document.querySelectorAll("#themeSeg button").forEach(x=>x.classList.toggle("on",x.dataset.v===mode));
+  applyTheme(mode);
+  // follow the OS when in auto mode
+  if(window.matchMedia){
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{
+      if(D && (localStorage.getItem("bvexpl-theme")||"auto")==="auto")
+        requestAnimationFrame(()=>{draw();drawMini();drawCat();drawLegend()});
+    });
+  }
+})();
 document.getElementById("resetBtn").onclick=()=>{
   selCats.clear(); selSems.clear(); pinned=null;
   document.querySelectorAll(".chip.on").forEach(c=>c.classList.remove("on"));
@@ -468,18 +516,51 @@ document.getElementById("playBtn").onclick=function(){
     },900);
   }else clearInterval(playTimer);
 };
+// ---- zoom (wheel, centered on cursor) + pan (drag) --------------------
+let dragging=false, dragMoved=false, dragStart=null, panStart=null;
+cv.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const b=baseProj();
+  // data coords under the cursor, held fixed across the zoom
+  const dx=(mx-(b.cx+view.tx))/(b.s*view.k), dy=(my-(b.cy+view.ty))/(b.s*view.k);
+  const factor=Math.exp(-e.deltaY*0.0016);
+  view.k=Math.max(1,Math.min(40,view.k*factor));
+  view.tx=mx-b.cx-dx*b.s*view.k;
+  view.ty=my-b.cy-dy*b.s*view.k;
+  if(view.k===1){view.tx=0;view.ty=0;}
+  draw();
+},{passive:false});
+cv.addEventListener("mousedown",e=>{
+  dragging=true; dragMoved=false;
+  dragStart=[e.clientX,e.clientY]; panStart=[view.tx,view.ty];
+});
+window.addEventListener("mouseup",()=>{dragging=false;});
 cv.addEventListener("mousemove",e=>{
-  const r=cv.getBoundingClientRect();
-  const i=nearest(e.clientX-r.left, e.clientY-r.top);
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(dragging){
+    const ddx=e.clientX-dragStart[0], ddy=e.clientY-dragStart[1];
+    if(Math.abs(ddx)+Math.abs(ddy)>3){
+      dragMoved=true; cv.style.cursor="grabbing";
+      view.tx=panStart[0]+ddx; view.ty=panStart[1]+ddy;
+      if(view.k===1){view.tx=0;view.ty=0;}   // no panning when not zoomed
+      draw();
+    }
+    return;
+  }
+  const i=nearest(mx,my);
   if(i!==hoverIdx){hoverIdx=i; if(pinned==null) showCrop(i); draw()}
 });
-cv.addEventListener("mouseleave",()=>{hoverIdx=-1; if(pinned==null) showCrop(-1); draw()});
+cv.addEventListener("mouseleave",()=>{hoverIdx=-1; cv.style.cursor="crosshair";
+  if(pinned==null && !dragging) showCrop(-1); draw()});
 cv.addEventListener("click",e=>{
+  if(dragMoved){dragMoved=false; return;}   // was a pan, not a pin
   const r=cv.getBoundingClientRect();
   const i=nearest(e.clientX-r.left, e.clientY-r.top);
   pinned = (i>=0 && pinned!==i) ? i : null;
   showCrop(pinned!=null?pinned:hoverIdx); draw();
 });
+cv.addEventListener("dblclick",()=>resetView());
 window.addEventListener("resize",()=>{resize();drawMini();drawCat()});
 
 // ---- boot ---------------------------------------------------------------
