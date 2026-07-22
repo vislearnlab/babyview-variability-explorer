@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BabyView Object-Category Variability — CLIP Layer Analyses</title>
+<style>
+:root{
+  color-scheme: light;
+  --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --ring:rgba(11,11,11,0.10); --accent:#eb6834; --s0:#2a78d6;
+}
+:root[data-theme="dark"], html[data-theme="dark"]{
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --ring:rgba(255,255,255,0.10); --accent:#eb6834; --s0:#3987e5;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --ring:rgba(255,255,255,0.10); --s0:#3987e5;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:40px 26px 70px}
+h1{font-size:29px;margin:0 0 6px;letter-spacing:-.015em;line-height:1.25}
+.authors{color:var(--ink2);font-size:15px;margin:0 0 4px}
+.venue{color:var(--muted);font-size:13.5px;margin:0 0 26px}
+h2{font-size:19px;margin:38px 0 10px;letter-spacing:-.01em}
+p{color:var(--ink2)}
+p b, li b{color:var(--ink);font-weight:640}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin:26px 0 6px}
+.btn{display:inline-flex;align-items:center;gap:9px;text-decoration:none;
+  background:var(--accent);color:#fff;padding:12px 20px;border-radius:10px;font-weight:640;font-size:15.5px}
+.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--ring)}
+.btn:hover{opacity:.9}
+figure{margin:20px 0}
+figure img{width:100%;border:1px solid var(--ring);border-radius:12px;background:var(--surface)}
+figcaption{color:var(--muted);font-size:13px;margin-top:9px}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:16px 19px;margin:16px 0}
+ul{color:var(--ink2);padding-left:20px}
+li{margin:7px 0}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:14px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--ring);color:var(--ink2)}
+th{color:var(--ink);font-weight:640;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+a{color:var(--s0)}
+.foot{margin-top:40px;padding-top:18px;border-top:1px solid var(--ring);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Where in CLIP does everyday object-category variability arise?</h1>
+<p class="authors">Layer-wise reanalysis of the BabyView object-category dispersion metrics</p>
+<p class="venue">Follow-up to Yang, Sepuri, Tan, Aw, Frank &amp; Long, <i>Variability in Young Children's
+Everyday Visual Experiences of Object Categories</i> (CCN 2026)</p>
+
+<div class="cta">
+  <a class="btn" href="explorer/">Open the interactive explorer</a>
+  <a class="btn alt" href="https://github.com/vislearnlab/babyview-variability-explorer">Code &amp; data</a>
+</div>
+
+<h2>The question</h2>
+<p>
+The CCN abstract measured how variable children's everyday object categories are, using the
+<b>final</b> CLIP embedding of 7,018 human-validated crops. But it noted a limitation: the metrics
+<i>"do not distinguish between different sources of exemplar variability."</i>
+</p>
+<p>
+Network depth offers one handle on that. If a category's dispersion ranking is already present in
+the first transformer block, it is largely <b>low-level appearance</b> — color, texture, lighting.
+If it appears only in the last blocks, it is something the network <b>constructs</b>: a semantic or
+viewpoint property. So we recomputed the same dispersion metrics, with the same code, at
+<b>every one of the 12 blocks</b>.
+</p>
+
+<figure>
+  <img src="results/figures/poster_layerwise.png" alt="Layer-wise dispersion results, four panels">
+  <figcaption>
+    <b>A</b> Rank agreement with the published final-layer ordering, by block.
+    <b>B, C</b> Block 0 versus the published value, colored by CDI semantic group.
+    <b>D</b> Frequency–dispersion coupling at every depth.
+    72 categories, N = 5,921 crops from the public privacy-filtered release.
+  </figcaption>
+</figure>
+
+<h2>What we found</h2>
+
+<div class="card">
+<p style="margin-top:0"><b>Global and local dispersion have different origins in depth.</b></p>
+<table>
+  <tr><th>Block</th><th class="n">0</th><th class="n">3</th><th class="n">5</th><th class="n">8</th><th class="n">10</th><th class="n">11</th><th class="n">final</th></tr>
+  <tr><td>Global (distance to centroid)</td><td class="n">.29</td><td class="n">.54</td><td class="n">.55</td><td class="n">.04</td><td class="n">.71</td><td class="n">.93</td><td class="n">.99</td></tr>
+  <tr><td>Local (kNN, k = 5)</td><td class="n">.65</td><td class="n">.56</td><td class="n">.52</td><td class="n">.29</td><td class="n">.83</td><td class="n">.95</td><td class="n">.99</td></tr>
+</table>
+<p style="margin-bottom:0">
+The global ordering the abstract's Figure 1C rests on is <b>essentially absent until the last two
+blocks</b> — it is built at 10–11, not inherited from low-level statistics. Local dispersion is
+different: it already agrees at <b>rho = .65 in block 0</b>. Which exemplars sit near each other is
+partly a low-level fact; how far a category spreads overall is not.
+</p>
+</div>
+
+<ul>
+  <li><b>The weak frequency–dispersion link is not a readout artifact.</b> No readout at any depth
+  shows reliable coupling (all |rho| &lt; .24), so frequency and variability look genuinely
+  dissociable across the whole network.</li>
+  <li><b>CLIP's patch tokens match DINOv3 better than CLIP's own CLS does</b> (rho = .60–.62 vs .52
+  for local dispersion), suggesting the reported cross-model agreement is partly a readout mismatch
+  rather than a representational disagreement.</li>
+  <li><b>Effective dimensionality climbs with depth</b> (10 → 70 for CLS), most sharply at blocks
+  9–11 — the same place the dispersion ordering gets built.</li>
+</ul>
+
+<h2>The explorer</h2>
+<p>
+Every crop, laid out by t-SNE of its CLIP representation at a block you choose. Drag the
+<b>layer slider</b> — or hit Play — to watch the space reorganize from early visual features to the
+final semantic embedding. Color by CDI semantic group or by dispersion, filter by category, and
+hover any point to see the crop it came from.
+</p>
+<div class="cta"><a class="btn" href="explorer/">Open the explorer</a></div>
+
+<h2>Reproducing</h2>
+<p>
+Everything runs from the public privacy-filtered release in
+<a href="https://github.com/babyview-project/object-detection">babyview-project/object-detection</a>;
+no restricted BabyView data is needed. The metric code is a verbatim copy of the paper's
+<code>valid7018_category_metrics.py</code>, and the final-layer readout reproduces the published
+per-category values at rho = .993 (global) and .994 (local).
+</p>
+
+<div class="foot">
+  72 of the paper's 85 categories; body-part categories are withheld from the public release for
+  privacy. Exploratory follow-up analyses, not part of the published abstract.
+</div>
+
+</div>
+</body>
+</html>
