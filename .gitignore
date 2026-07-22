@@ -1,8 +1,10 @@
-# Large derived activations — regenerate with scripts/extract_clip_layers.py
-results/clip_layers/*.npy
+# Per-block activations ARE tracked (214 MB) so the analyses can be rerun
+# without a GPU; regenerate with scripts/extract_clip_layers.py if needed.
 results/extract_log.txt
+results/explorer_build.log
 
-# Unzipped copies of the public archives (zips are tracked)
+# Unzipped copies of the public archives — byte-identical to the tracked
+# zips, so excluded as pure duplication. Unzip locally before running scripts.
 data/valid7018_public/crops/
 data/valid7018_public/embeddings/
 
