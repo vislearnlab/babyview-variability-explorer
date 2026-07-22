@@ -109,8 +109,8 @@ a{color:var(--s0)}
     <div class="tgroup" style="flex:1">
       <div class="tlabel">CLIP transformer block</div>
       <div class="layerwrap">
-        <span class="layerbadge" id="layerBadge">block 0</span>
-        <input type="range" id="layer" min="0" max="12" step="1" value="0">
+        <span class="layerbadge" id="layerBadge">final</span>
+        <input type="range" id="layer" min="0" max="12" step="1" value="12">
         <button class="ghost" id="playBtn">Play</button>
       </div>
     </div>
@@ -207,16 +207,41 @@ const CDI_COLORS={animals:"#4DB8A8",body_parts:"#E87A5F",clothing:"#9B7EC8",food
   furniture_rooms:"#6BAB7A",household:"#D97B9E",outside:"#5B9BD5",people:"#E8C44C",
   toys:"#B07CC8",vehicles:"#6BA3D5",other:"#8B9A9E"};
 const GLOBAL_C="#1F4E79", LOCAL_C="#C0561F";
-// 72 distinct category colors: golden-angle hue spacing, cycled lightness/
-// saturation bands so neighbors in the list separate. Built once D is loaded.
+// Per-category colors that respect CDI semantic structure: each category takes
+// its group's base hue, then members spread in hue + lightness so a group reads
+// as one color family while individual categories stay distinguishable.
+// Built once D is loaded (needs the semantic assignments).
 let CAT_PAL=null;
-function buildCatPalette(n){
-  const pal=[];
-  for(let i=0;i<n;i++){
-    const hue=(i*137.508)%360;
-    const sat=58+(i%3)*11;            // 58/69/80
-    const light=44+(i%4)*8;           // 44/52/60/68
-    pal.push(`hsl(${hue.toFixed(0)} ${sat}% ${light}%)`);
+function hexToHSL(hex){
+  const m=hex.replace('#',''); const r=parseInt(m.slice(0,2),16)/255,
+    g=parseInt(m.slice(2,4),16)/255, b=parseInt(m.slice(4,6),16)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn; let h=0;
+  if(d){ h = mx===r ? ((g-b)/d)%6 : mx===g ? (b-r)/d+2 : (r-g)/d+4; h*=60; if(h<0)h+=360; }
+  const l=(mx+mn)/2, s=d?d/(1-Math.abs(2*l-1)):0;
+  return {h, s:s*100, l:l*100};
+}
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function buildCatPalette(){
+  const pal=new Array(D.categories.length);
+  const groups={};
+  for(let ci=0;ci<D.categories.length;ci++){
+    const s=D.semantics[D.cat_semantic[ci]];
+    (groups[s]=groups[s]||[]).push(ci);
+  }
+  for(const s in groups){
+    const base=hexToHSL(CDI_COLORS[s]||CDI_COLORS.other);
+    const mem=groups[s].slice().sort((a,b)=>D.categories[a]<D.categories[b]?-1:1);
+    const m=mem.length;
+    const band=Math.min(46, 16+m*1.3);           // wider hue spread for larger groups
+    mem.forEach((ci,k)=>{
+      const t = m>1 ? k/(m-1) : 0.5;             // 0..1 across the group
+      const hue = base.h + (t-0.5)*band;
+      // lightness spread is anchored to a fixed 34..76 ramp (not base.l), so
+      // members never pile up at a clamp — every category gets its own shade.
+      const light = 34 + t*42;
+      const sat = clamp(base.s + (k%2?9:-7), 34, 90);   // alternate to separate neighbors
+      pal[ci] = `hsl(${(((hue%360)+360)%360).toFixed(0)} ${sat.toFixed(0)}% ${light.toFixed(0)}%)`;
+    });
   }
   return pal;
 }
@@ -258,7 +283,7 @@ function pointColor(i){
     return CDI_COLORS[D.semantics[D.cat_semantic[c]]]||CDI_COLORS.other;
   }
   if(COLORBY==="category"){
-    return (CAT_PAL||(CAT_PAL=buildCatPalette(D.categories.length)))[c];
+    return (CAT_PAL||(CAT_PAL=buildCatPalette()))[c];
   }
   const key=COLORBY==="global"?"global":"local";
   const arr=D.category_metrics[key+"_by_layer"][LAYER];
@@ -511,7 +536,7 @@ function drawLegend(){
   if(COLORBY==="category"){
     // 72 swatches is too many for a fixed legend; key the selected ones (or a
     // hint), since each category already has its own hue and hover names it.
-    const pal=CAT_PAL||(CAT_PAL=buildCatPalette(D.categories.length));
+    const pal=CAT_PAL||(CAT_PAL=buildCatPalette());
     const sel=[...selCats];
     if(sel.length){
       el.innerHTML=`<div class="row"><b>Category (${sel.length} selected)</b></div>`+
@@ -519,7 +544,7 @@ function drawLegend(){
         (sel.length>12?`<div class="row" style="color:var(--muted)">+${sel.length-12} more</div>`:"");
     }else{
       el.innerHTML=`<div class="row"><b>Category</b></div>`+
-        `<div class="row" style="color:var(--muted)">72 distinct hues · hover to name · filter with the chips below</div>`;
+        `<div class="row" style="color:var(--muted)">hues grouped by CDI semantic · hover to name · filter with the chips below</div>`;
     }
   }else if(COLORBY==="semantic"){
     const present=[...new Set(D.cat_semantic)].sort();
@@ -547,7 +572,7 @@ function buildChips(){
     b.classList.toggle("on"); draw(); updateStats();
   });
   const cc=document.getElementById("catChips");
-  const pal=CAT_PAL||(CAT_PAL=buildCatPalette(D.categories.length));
+  const pal=CAT_PAL||(CAT_PAL=buildCatPalette());
   cc.innerHTML=D.categories.map((c,i)=>
     `<button class="chip" data-ci="${i}"><span class="sw" style="background:${pal[i]}"></span>${c}</button>`).join("");
   cc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
@@ -684,7 +709,7 @@ window.addEventListener("resize",()=>{resize();drawCat()});
     `Layouts are per-block t-SNE (PCA-50 first), Procrustes-aligned to the previous block so the `+
     `morph shows real reorganization rather than an arbitrary t-SNE rotation. `+
     `Category dispersion metrics use the CCN 2026 pipeline unchanged (Euclidean, k = 5, cohort z-score).`;
-  buildChips(); drawLegend(); resize(); setLayer(0,false);
+  buildChips(); drawLegend(); resize(); setLayer(12,false);
 })();
 </script>
 </body>
