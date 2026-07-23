@@ -86,31 +86,46 @@ def main() -> None:
     sem_map = dict(zip(sem_df.category, sem_df.cdi_semantic.str.strip().str.lower()))
     sem_names = sorted({sem_map.get(c, "other") for c in cats})
 
-    # per-layer layouts
-    xs, ys = [], []
-    prev = None
-    for name in READOUTS:
-        x = np.load(LAYERS / f"{name}.npy").astype(np.float32)
-        x = (x - x.mean(0)) / np.maximum(x.std(0), 1e-10)
-        p = PCA(n_components=PCA_DIM, random_state=SEED).fit_transform(x)
-        emb = TSNE(n_components=2, perplexity=30, init="pca", random_state=SEED,
-                   learning_rate="auto").fit_transform(p)
-        emb = emb - emb.mean(0)
-        emb = emb / np.abs(emb).max() * 100.0
-        if prev is not None:
-            emb = procrustes_align(prev, emb)
-        prev = emb
-        xs.append(np.round(emb[:, 0], 2).tolist())
-        ys.append(np.round(emb[:, 1], 2).tolist())
-        print(f"  layout {name}")
+    # per-layer t-SNE layouts, for each model that has extracted activations
+    MODELS = {"clip": REPO / "results" / "clip_layers"}
+    if (REPO / "results" / "dinov3_layers" / "final.npy").exists():
+        MODELS["dinov3"] = REPO / "results" / "dinov3_layers"
 
-    # per-category metrics, per layer
-    lm = pd.read_csv(METRICS / "layer_category_metrics.csv")
-    gd, ld = {}, {}
-    for name in READOUTS:
-        d = lm[lm.readout == name].set_index("category")
-        gd[name] = [round(float(d.loc[c, "global_dispersion"]), 3) for c in cats]
-        ld[name] = [round(float(d.loc[c, "mean_knn_dist"]), 3) for c in cats]
+    def layouts_for(layer_dir):
+        xs, ys, prev = [], [], None
+        for name in READOUTS:
+            x = np.load(layer_dir / f"{name}.npy").astype(np.float32)
+            x = (x - x.mean(0)) / np.maximum(x.std(0), 1e-10)
+            p = PCA(n_components=PCA_DIM, random_state=SEED).fit_transform(x)
+            emb = TSNE(n_components=2, perplexity=30, init="pca", random_state=SEED,
+                       learning_rate="auto").fit_transform(p)
+            emb = emb - emb.mean(0)
+            emb = emb / np.abs(emb).max() * 100.0
+            if prev is not None:
+                emb = procrustes_align(prev, emb)
+            prev = emb
+            xs.append(np.round(emb[:, 0], 2).tolist())
+            ys.append(np.round(emb[:, 1], 2).tolist())
+            print(f"  [{layer_dir.name}] layout {name}")
+        return xs, ys
+
+    xs_by_model, ys_by_model = {}, {}
+    for mname, ldir in MODELS.items():
+        xs_by_model[mname], ys_by_model[mname] = layouts_for(ldir)
+    xs, ys = xs_by_model["clip"], ys_by_model["clip"]   # default model = clip
+
+    # per-category dispersion per layer, per model (from each model's metrics dir)
+    def layer_metrics(metrics_dir):
+        lm = pd.read_csv(metrics_dir / "layer_category_metrics.csv")
+        g = {n: [round(float(lm[lm.readout == n].set_index("category").loc[c, "global_dispersion"]), 3) for c in cats] for n in READOUTS}
+        l = {n: [round(float(lm[lm.readout == n].set_index("category").loc[c, "mean_knn_dist"]), 3) for c in cats] for n in READOUTS}
+        return g, l
+
+    gd_by_model, ld_by_model = {}, {}
+    for mname in MODELS:
+        mdir = REPO / "results" / ("metrics" if mname == "clip" else f"metrics_{mname}")
+        gd_by_model[mname], ld_by_model[mname] = layer_metrics(mdir)
+    gd, ld = gd_by_model["clip"], ld_by_model["clip"]
 
     base = pd.read_csv(METRICS / "baseline_category_metrics.csv")
     pub = base[base.source == "released_clip"].set_index("category")
@@ -156,17 +171,22 @@ def main() -> None:
         "semantics": sem_names,
         "cat_semantic": [sem_names.index(sem_map.get(c, "other")) for c in cats],
         "crop_dir": "crops",
+        "models": list(MODELS.keys()),
         "points": {
             "file": [f"{s}.jpg" for s in manifest.stem],
             "cat": [cat_index[c] for c in manifest.category],
             "instance": [int(v) for v in inst_per_crop],   # within-category instance id
-            "x": xs,
+            "x": xs,               # default (clip) layouts, kept for back-compat
             "y": ys,
+            "x_by_model": xs_by_model,   # {clip:[13][n], dinov3:[13][n]}
+            "y_by_model": ys_by_model,
         },
         "category_metrics": {
             "n_exemplars": [int((manifest.category == c).sum()) for c in cats],
             "global_by_layer": [gd[n] for n in READOUTS],
             "local_by_layer": [ld[n] for n in READOUTS],
+            "global_by_layer_by_model": {m: [gd_by_model[m][n] for n in READOUTS] for m in MODELS},
+            "local_by_layer_by_model": {m: [ld_by_model[m][n] for n in READOUTS] for m in MODELS},
             "published_global": [round(float(pub.loc[c, "global_dispersion"]), 3) for c in cats],
             "published_local": [round(float(pub.loc[c, "mean_knn_dist"]), 3) for c in cats],
             "dinov3_global": [round(float(pubd.loc[c, "global_dispersion"]), 3) for c in cats],

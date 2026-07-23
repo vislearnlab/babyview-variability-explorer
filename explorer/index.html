@@ -118,11 +118,18 @@ a{color:var(--s0)}
 <div class="wrap">
   <div class="toolbar">
     <div class="tgroup" style="flex:1">
-      <div class="tlabel">CLIP transformer block</div>
+      <div class="tlabel">Transformer block <span id="modelTag" class="hint" style="text-transform:none;letter-spacing:0">CLIP ViT-B/32</span></div>
       <div class="layerwrap">
         <span class="layerbadge" id="layerBadge">final</span>
         <input type="range" id="layer" min="0" max="12" step="1" value="12">
         <button class="ghost" id="playBtn">Play</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <div class="tlabel">Model</div>
+      <div class="seg" id="modelSeg">
+        <button data-v="clip" class="on">CLIP</button>
+        <button data-v="dinov3">DINOv3</button>
       </div>
     </div>
     <div class="tgroup">
@@ -280,7 +287,13 @@ function buildCatPalette(){
   return pal;
 }
 
-let D=null, LAYER=0, COLORBY="semantic", VIEW="dots", BORDERS=false;
+let D=null, LAYER=0, COLORBY="semantic", VIEW="dots", BORDERS=false, MODEL="clip";
+const MODEL_LABEL={clip:"CLIP ViT-B/32", dinov3:"DINOv3 ViT-B/16"};
+// current model's per-layer arrays (fall back to legacy fields if absent)
+function mx(L){ return (D.points.x_by_model&&D.points.x_by_model[MODEL])?D.points.x_by_model[MODEL][L]:D.points.x[L]; }
+function my(L){ return (D.points.y_by_model&&D.points.y_by_model[MODEL])?D.points.y_by_model[MODEL][L]:D.points.y[L]; }
+function gLayer(L){ const bm=D.category_metrics.global_by_layer_by_model; return (bm&&bm[MODEL])?bm[MODEL][L]:D.category_metrics.global_by_layer[L]; }
+function lLayer(L){ const bm=D.category_metrics.local_by_layer_by_model; return (bm&&bm[MODEL])?bm[MODEL][L]:D.category_metrics.local_by_layer[L]; }
 let selCats=new Set(), selSems=new Set(), pinned=null, hoverIdx=-1;
 let curX=null, curY=null, animFrom=null, animTo=null, animT=1, animRAF=0;
 let playing=false, playTimer=0;
@@ -308,7 +321,7 @@ function seqColor(t){ // muted blue -> orange ramp, readable in both themes
   return `rgb(${Math.round(lerp(a[0],b[0],t))},${Math.round(lerp(a[1],b[1],t))},${Math.round(lerp(a[2],b[2],t))})`;
 }
 function catMetricRange(key){
-  const arr=D.category_metrics[key+"_by_layer"][LAYER];
+  const arr=key==="global"?gLayer(LAYER):lLayer(LAYER);
   return [Math.min(...arr), Math.max(...arr)];
 }
 function pointColor(i){
@@ -328,7 +341,7 @@ function pointColor(i){
     return `hsl(${h} 70% 52%)`;
   }
   const key=COLORBY==="global"?"global":"local";
-  const arr=D.category_metrics[key+"_by_layer"][LAYER];
+  const arr=key==="global"?gLayer(LAYER):lLayer(LAYER);
   const [lo,hi]=catMetricRange(key);
   return seqColor(hi>lo?(arr[c]-lo)/(hi-lo):0.5);
 }
@@ -343,7 +356,7 @@ function visible(i){
 function setLayer(L,animate){
   const from={x:curX?curX.slice():null,y:curY?curY.slice():null};
   LAYER=L;
-  const tx=D.points.x[L], ty=D.points.y[L];
+  const tx=mx(L), ty=my(L);
   if(animate && from.x){
     animFrom=from; animTo={x:tx,y:ty}; animT=0;
     cancelAnimationFrame(animRAF);
@@ -711,6 +724,15 @@ document.getElementById("axisSeg").onclick=e=>{
   [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
   drawCat();
 };
+document.getElementById("modelSeg").onclick=e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(!(D.models||["clip"]).includes(b.dataset.v)) return;   // ignore if not built
+  MODEL=b.dataset.v;
+  [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
+  document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL];
+  setLayer(LAYER,false);   // reproject at same block for the new model
+  drawLegend();
+};
 document.getElementById("layer").oninput=e=>setLayer(+e.target.value,true);
 document.getElementById("colorSeg").onclick=e=>{
   const b=e.target.closest("button"); if(!b) return;
@@ -831,6 +853,12 @@ window.addEventListener("resize",()=>{resize();drawCat()});
     `Layouts are per-block t-SNE (PCA-50 first), Procrustes-aligned to the previous block so the `+
     `morph shows real reorganization rather than an arbitrary t-SNE rotation. `+
     `Category dispersion metrics use the CCN 2026 pipeline unchanged (Euclidean, k = 5, cohort z-score).`;
+  // model toggle: disable models that weren't built into this payload
+  const built=D.models||["clip"];
+  document.querySelectorAll("#modelSeg button").forEach(b=>{
+    if(!built.includes(b.dataset.v)){ b.disabled=true; b.style.opacity=.4; b.style.cursor="not-allowed"; b.title="not built into this dataset"; }
+  });
+  document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL];
   buildChips(); drawLegend(); resize(); setLayer(12,false); updateInstDesc();
 })();
 </script>
