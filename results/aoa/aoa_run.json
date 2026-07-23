@@ -1,0 +1,13 @@
+{
+  "n_categories": 72,
+  "aoa_source": "data/aoa/MCDI_items_with_AoA.csv (uni_lemma join)",
+  "word_freq_source": "data/aoa/childes_english.csv (word_count, log10)",
+  "word_freq_vs_aoa_rho": -0.35163731648357727,
+  "word_freq_vs_aoa_p": 0.002454568240417796,
+  "visual_freq_vs_aoa_rho": -0.11498719007081719,
+  "visual_freq_vs_aoa_p": 0.33614119834813805,
+  "visual_vs_word_freq_rho": 0.11988518058050408,
+  "method": "Spearman; partial controls for CHILDES log word frequency via rank residuals",
+  "headline": "Dispersion does not predict AoA (validated null: word freq DOES predict AoA rho=-0.35). Visual and word frequency are nearly decoupled (rho=0.12).",
+  "caveat": "72 public categories only (body parts excluded); n=72 is modest -- treat as suggestive."
+}
