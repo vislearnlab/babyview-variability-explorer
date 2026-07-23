@@ -1,0 +1,8 @@
+{
+  "threshold_cosine": 0.8,
+  "features": "DINOv3-final (released), L2-normalized, average-linkage agglomerative",
+  "n_categories": 72,
+  "total_crops": 5921,
+  "total_instances": 5642,
+  "caveat": "no ground truth / no temporal linkage; instance counts are an upper bound. Eyeball montages before trusting."
+}
