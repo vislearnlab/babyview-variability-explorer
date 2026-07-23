@@ -506,7 +506,15 @@ function spearman(xs,ys){
 function drawCat(){
   const cv2=document.getElementById("catScatter"), x=cv2.getContext("2d");
   const list=document.getElementById("catList"), hd=document.getElementById("catHint");
-  const cm=D.category_metrics, A=AXES[AXISMODE];
+  const cm=D.category_metrics;
+  // Robust to payload/version skew (e.g. a cached older points.json): if the
+  // selected axis needs a field this payload doesn't have, fall back to axes
+  // built only from published_global/local, which every payload version carries.
+  let A=AXES[AXISMODE];
+  if(!cm[A.x] || !cm[A.y]){
+    A=AXES.global_local;
+    if(hd) hd.title="axis data missing in this dataset — showing global × local (try a hard refresh)";
+  }
   const dpr=window.devicePixelRatio||1, w=Math.max(120,cv2.parentElement.clientWidth-30), h=240;
   cv2.width=w*dpr; cv2.height=h*dpr; cv2.style.width=w+"px"; cv2.style.height=h+"px";
   x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
