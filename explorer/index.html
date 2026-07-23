@@ -85,6 +85,17 @@ canvas.mini{display:block;width:100%;height:132px}
 .crow .cv{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2)}
 .crow.head{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
 .crow.head .cv{color:var(--muted)}
+#instGroups{display:flex;flex-wrap:wrap;gap:12px}
+.igrp{display:flex;flex-direction:column;gap:4px;padding:7px;border:1px solid var(--ring);
+  border-radius:9px;background:var(--plane)}
+.igrp.rep{border-color:var(--axis)}
+.igrp .ilab{font-size:11px;color:var(--muted);font-weight:600}
+.igrp .ithumbs{display:flex;flex-wrap:wrap;gap:3px;max-width:520px}
+.igrp img{width:60px;height:60px;object-fit:contain;background:var(--surface);
+  border-radius:4px;border:1px solid var(--ring)}
+.isingles{display:flex;flex-wrap:wrap;gap:3px}
+.isingles img{width:52px;height:52px;object-fit:contain;background:var(--surface);
+  border-radius:4px;border:1px solid var(--ring)}
 .foot{display:flex;flex-wrap:wrap;gap:18px;padding:11px 16px;margin-top:14px;
   background:var(--surface);border:1px solid var(--ring);border-radius:12px;font-size:13px;color:var(--ink2)}
 .foot b{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -198,6 +209,12 @@ a{color:var(--s0)}
     <div>Block <b id="fLayer">0</b></div>
     <div>rho with published global <b id="fRhoG">-</b></div>
     <div>rho with published local <b id="fRhoL">-</b></div>
+  </div>
+
+  <div class="card pad" id="instPanel" style="margin-top:14px;display:none">
+    <h3 id="instTitle">Instances</h3>
+    <div class="hint" style="margin:-3px 0 10px" id="instSub"></div>
+    <div id="instGroups"></div>
   </div>
 
   <div class="note" id="metaNote"></div>
@@ -543,6 +560,39 @@ function drawCat(){
     : '<div class="hint">Select categories (chips above) to highlight them. '+
       'All 72 are plotted; hovering a point previews its category.</div>';
 }
+// Within-category instance montage: crops grouped by estimated object instance,
+// repeated-object groups first (bordered, with an x-count), singletons packed
+// after. Appears only when exactly one category is selected.
+function renderInstances(){
+  const panel=document.getElementById("instPanel");
+  if(selCats.size!==1){ panel.style.display="none"; return; }
+  const ci=[...selCats][0];
+  panel.style.display="block";
+  document.getElementById("instTitle").textContent="Instances of “"+D.categories[ci]+"”";
+  // gather this category's crops, group by instance id
+  const groups={};
+  for(let i=0;i<D.n;i++){
+    if(D.points.cat[i]!==ci) continue;
+    (groups[D.points.instance[i]]=groups[D.points.instance[i]]||[]).push(i);
+  }
+  const all=Object.values(groups).sort((a,b)=>b.length-a.length);
+  const multi=all.filter(g=>g.length>=2), singles=all.filter(g=>g.length<2);
+  const nCrops=all.reduce((s,g)=>s+g.length,0);
+  const pctDistinct=Math.round((D.category_metrics.instances_per_crop||[])[ci]*100);
+  document.getElementById("instSub").innerHTML=
+    `${nCrops} crops → <b>${all.length} estimated objects</b> `+
+    `(${pctDistinct}% distinct). <b>${multi.length}</b> objects seen more than once. `+
+    `Grouping is DINOv3 similarity (cos&gt;0.80), approximate — no ground truth.`;
+  const img=i=>`<img loading="lazy" src="${D.crop_dir}/${D.points.file[i]}" title="${D.categories[ci]}">`;
+  let html=multi.map(g=>
+    `<div class="igrp rep"><span class="ilab">×${g.length} · same object</span>`+
+    `<div class="ithumbs">${g.map(img).join("")}</div></div>`).join("");
+  if(singles.length){
+    html+=`<div class="igrp"><span class="ilab">seen once · ${singles.length} distinct objects</span>`+
+      `<div class="isingles">${singles.map(g=>img(g[0])).join("")}</div></div>`;
+  }
+  document.getElementById("instGroups").innerHTML=html;
+}
 function updateStats(){
   let vis=0; const cs=new Set();
   for(let i=0;i<D.n;i++) if(visible(i)){vis++;cs.add(D.points.cat[i])}
@@ -604,7 +654,7 @@ function buildChips(){
   cc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     const i=+b.dataset.ci;
     selCats.has(i)?selCats.delete(i):selCats.add(i);
-    b.classList.toggle("on"); draw(); updateStats(); drawCat();
+    b.classList.toggle("on"); draw(); updateStats(); drawCat(); renderInstances();
     if(COLORBY==="category") drawLegend();
   });
   document.getElementById("catCount").textContent=`(${D.categories.length})`;
@@ -667,7 +717,7 @@ document.getElementById("themeSeg").onclick=e=>{
 document.getElementById("resetBtn").onclick=()=>{
   selCats.clear(); selSems.clear(); pinned=null;
   document.querySelectorAll(".chip.on").forEach(c=>c.classList.remove("on"));
-  draw(); updateStats(); drawCat(); showCrop(-1);
+  draw(); updateStats(); drawCat(); renderInstances(); showCrop(-1);
 };
 document.getElementById("playBtn").onclick=function(){
   playing=!playing; this.textContent=playing?"Pause":"Play";
