@@ -190,10 +190,16 @@ a{color:var(--s0)}
           <div class="hmeta" id="hoverMeta"><span class="hint">Hover a point to see the crop.</span></div>
         </div>
       </div>
+      <div class="card pad" id="instCard">
+        <h3>Object instances</h3>
+        <div id="instDesc"></div>
+      </div>
       <div class="card pad">
         <h3>Selected categories <span id="catHint" class="hint"></span></h3>
-        <div class="seg" id="axisSeg" style="margin-bottom:10px">
-          <button data-v="freq_global" class="on">freq × global</button>
+        <div class="seg" id="axisSeg" style="margin-bottom:10px;flex-wrap:wrap">
+          <button data-v="inst_local" class="on">inst × local</button>
+          <button data-v="inst_global">inst × global</button>
+          <button data-v="freq_global">freq × global</button>
           <button data-v="freq_local">freq × local</button>
           <button data-v="global_local">global × local</button>
         </div>
@@ -461,9 +467,11 @@ function showCrop(i){
     local kNN here: <b>${l.toFixed(2)}</b><br>
     <span class="hint">${D.category_metrics.n_exemplars[c]} crops in category</span>`;
 }
-let AXISMODE="freq_global";
+let AXISMODE="inst_local";
 const AXES={
   // key -> {x, y, xlab, ylab, xlog}
+  inst_local: {x:"instances_per_crop", y:"published_local",  xlab:"distinct objects per crop", ylab:"local dispersion (kNN)", xlog:false},
+  inst_global:{x:"instances_per_crop", y:"published_global", xlab:"distinct objects per crop", ylab:"global dispersion", xlog:false},
   freq_global:{x:"frequency", y:"published_global", xlab:"frequency (log)", ylab:"global dispersion", xlog:true},
   freq_local: {x:"frequency", y:"published_local",  xlab:"frequency (log)", ylab:"local dispersion (kNN)", xlog:true},
   global_local:{x:"published_global", y:"published_local", xlab:"global dispersion", ylab:"local dispersion (kNN)", xlog:false},
@@ -560,6 +568,44 @@ function drawCat(){
     : '<div class="hint">Select categories (chips above) to highlight them. '+
       'All 72 are plotted; hovering a point previews its category.</div>';
 }
+// Descriptive stats on object instances, and whether instance diversity indexes
+// local vs global dispersion (computed live from the payload, all 72 categories).
+function updateInstDesc(){
+  const el=document.getElementById("instDesc"); if(!el) return;
+  const cm=D.category_metrics, ipc=cm.instances_per_crop;
+  if(!ipc){ el.innerHTML='<div class="hint">no instance data</div>'; return; }
+  const nInst=cm.n_exemplars.reduce((s,ne,i)=>s+Math.round(ipc[i]*ne),0);
+  const totCrops=cm.n_exemplars.reduce((a,b)=>a+b,0);
+  const idx=[...Array(D.categories.length).keys()];
+  const rhoL=spearman(idx.map(i=>ipc[i]), idx.map(i=>cm.published_local[i]));
+  const rhoG=spearman(idx.map(i=>ipc[i]), idx.map(i=>cm.published_global[i]));
+  // most-repeated categories
+  const rep=idx.slice().sort((a,b)=>ipc[a]-ipc[b]).slice(0,3)
+    .map(i=>`${D.categories[i]} ${Math.round((1-ipc[i])*100)}%`).join(", ");
+  let selLine="";
+  if(selCats.size){
+    const s=[...selCats].sort((a,b)=>ipc[a]-ipc[b]);
+    selLine=`<div style="margin-top:8px"><b>Selected:</b> `+
+      s.slice(0,6).map(i=>`${D.categories[i]} <b>${Math.round(ipc[i]*100)}%</b> distinct`).join(" · ")+
+      (s.length>6?` +${s.length-6}`:"")+`</div>`;
+  }
+  const sig=p=>Math.abs(p)>0.232?"":' <span style="color:var(--muted)">(n.s.)</span>';
+  el.innerHTML=
+    `<div style="font-size:20px;font-weight:700;color:var(--ink);line-height:1.15">`+
+      `${nInst.toLocaleString()} <span style="font-size:13px;font-weight:500;color:var(--ink2)">estimated distinct objects</span></div>`+
+    `<div class="hint" style="margin:2px 0 10px">across ${totCrops.toLocaleString()} crops · `+
+      `${Math.round((1-nInst/totCrops)*100)}% of crops are repeats of an object already seen · `+
+      `most repeated: ${rep}</div>`+
+    `<div style="font-size:12.5px;line-height:1.7">Does instance count index the paper's dispersion?`+
+      `<div style="margin-top:3px"><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${LOCAL_C}"></span> `+
+        `vs <b>local</b> (kNN): rho = <b>${rhoL.toFixed(2)}</b>${sig(rhoL)}</div>`+
+      `<div><span class="sw" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${GLOBAL_C}"></span> `+
+        `vs <b>global</b>: rho = <b>${rhoG.toFixed(2)}</b>${sig(rhoG)}</div>`+
+    `</div>`+
+    `<div class="hint" style="margin-top:8px">More distinct objects → higher <b>local</b> dispersion `+
+      `(repeats tighten nearest-neighbour distance). Global spread is viewpoint/appearance, not object count.</div>`+
+    selLine;
+}
 // Within-category instance montage: crops grouped by estimated object instance,
 // repeated-object groups first (bordered, with an x-count), singletons packed
 // after. Appears only when exactly one category is selected.
@@ -654,7 +700,7 @@ function buildChips(){
   cc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     const i=+b.dataset.ci;
     selCats.has(i)?selCats.delete(i):selCats.add(i);
-    b.classList.toggle("on"); draw(); updateStats(); drawCat(); renderInstances();
+    b.classList.toggle("on"); draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc();
     if(COLORBY==="category") drawLegend();
   });
   document.getElementById("catCount").textContent=`(${D.categories.length})`;
@@ -717,7 +763,7 @@ document.getElementById("themeSeg").onclick=e=>{
 document.getElementById("resetBtn").onclick=()=>{
   selCats.clear(); selSems.clear(); pinned=null;
   document.querySelectorAll(".chip.on").forEach(c=>c.classList.remove("on"));
-  draw(); updateStats(); drawCat(); renderInstances(); showCrop(-1);
+  draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc(); showCrop(-1);
 };
 document.getElementById("playBtn").onclick=function(){
   playing=!playing; this.textContent=playing?"Pause":"Play";
@@ -785,7 +831,7 @@ window.addEventListener("resize",()=>{resize();drawCat()});
     `Layouts are per-block t-SNE (PCA-50 first), Procrustes-aligned to the previous block so the `+
     `morph shows real reorganization rather than an arbitrary t-SNE rotation. `+
     `Category dispersion metrics use the CCN 2026 pipeline unchanged (Euclidean, k = 5, cohort z-score).`;
-  buildChips(); drawLegend(); resize(); setLayer(12,false);
+  buildChips(); drawLegend(); resize(); setLayer(12,false); updateInstDesc();
 })();
 </script>
 </body>
