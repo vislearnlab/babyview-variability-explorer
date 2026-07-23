@@ -39,9 +39,11 @@ from scipy.stats import spearmanr
 from category_metrics import compute_category_metrics
 
 REPO = Path(__file__).resolve().parent.parent
-LAYERS = REPO / "results" / "clip_layers"
 PUBLIC = REPO / "data" / "valid7018_public"
 CCN = REPO / "data" / "ccn2026_results"
+# LAYERS / OUT are set in main() from the --model flag (clip or dinov3), so the
+# same code produces both models' layer metrics into separate result dirs.
+LAYERS = REPO / "results" / "clip_layers"
 OUT = REPO / "results" / "metrics"
 
 K = 5
@@ -82,10 +84,19 @@ def load_released(manifest: pd.DataFrame) -> dict[str, np.ndarray]:
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", choices=["clip", "dinov3"], default="clip",
+                    help="which extracted layer set to score")
+    args = ap.parse_args()
+    global LAYERS, OUT
+    LAYERS = REPO / "results" / f"{args.model}_layers"
+    OUT = REPO / "results" / ("metrics" if args.model == "clip" else f"metrics_{args.model}")
+
     manifest = pd.read_csv(LAYERS / "manifest.csv")
     cats = manifest.category
     n_cat = cats.nunique()
-    print(f"{len(manifest)} exemplars, {n_cat} categories")
+    print(f"[{args.model}] {len(manifest)} exemplars, {n_cat} categories -> {OUT.name}")
 
     OUT.mkdir(parents=True, exist_ok=True)
 
