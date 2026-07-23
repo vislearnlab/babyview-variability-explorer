@@ -119,6 +119,7 @@ a{color:var(--s0)}
       <div class="seg" id="colorSeg">
         <button data-v="semantic" class="on">CDI semantic</button>
         <button data-v="category">Category</button>
+        <button data-v="instance">Instance</button>
         <button data-v="global">Global dispersion</button>
         <button data-v="local">Local dispersion</button>
       </div>
@@ -212,6 +213,16 @@ const GLOBAL_C="#1F4E79", LOCAL_C="#C0561F";
 // as one color family while individual categories stay distinguishable.
 // Built once D is loaded (needs the semantic assignments).
 let CAT_PAL=null;
+// group sizes keyed by cat*1000+instance, so instance color can grey singletons
+let INST_SIZE=null;
+function buildInstSize(){
+  INST_SIZE={};
+  for(let i=0;i<D.n;i++){
+    const k=D.points.cat[i]*1000+D.points.instance[i];
+    INST_SIZE[k]=(INST_SIZE[k]||0)+1;
+  }
+  return INST_SIZE;
+}
 function hexToHSL(hex){
   const m=hex.replace('#',''); const r=parseInt(m.slice(0,2),16)/255,
     g=parseInt(m.slice(2,4),16)/255, b=parseInt(m.slice(4,6),16)/255;
@@ -284,6 +295,14 @@ function pointColor(i){
   }
   if(COLORBY==="category"){
     return (CAT_PAL||(CAT_PAL=buildCatPalette()))[c];
+  }
+  if(COLORBY==="instance"){
+    // singletons (unique objects) grey; repeated-instance groups get a hue,
+    // so the same physical object seen multiple times pops out as one color.
+    const key=c*1000+D.points.instance[i];
+    if((INST_SIZE||buildInstSize())[key]<2) return css("--axis");
+    const h=((key*2654435761)>>>0)%360;   // stable hash -> hue
+    return `hsl(${h} 70% 52%)`;
   }
   const key=COLORBY==="global"?"global":"local";
   const arr=D.category_metrics[key+"_by_layer"][LAYER];
@@ -508,14 +527,16 @@ function drawCat(){
   // value list for the selected set
   const cats=[...sel].sort((a,b)=>cm.published_global[b]-cm.published_global[a]);
   const pct=v=>v==null?"—":(v*100).toFixed(2)+"%";
+  const ipc=cm.instances_per_crop||[];
   list.innerHTML = cats.length
     ? `<div class="crow head"><span></span><span class="cn">category</span>`+
-        `<span class="cv">freq</span><span class="cv">global</span><span class="cv">local</span></div>`+
+        `<span class="cv">distinct</span><span class="cv">global</span><span class="cv">local</span></div>`+
       cats.map(ci=>{
         const sem=D.semantics[D.cat_semantic[ci]], col=CDI_COLORS[sem]||CDI_COLORS.other;
+        const dist=ipc[ci]!=null?Math.round(ipc[ci]*100)+"%":"—";
         return `<div class="crow"><span class="dot" style="background:${col}"></span>`+
           `<span class="cn">${D.categories[ci]}</span>`+
-          `<span class="cv">${pct(cm.frequency[ci])}</span>`+
+          `<span class="cv" title="% of crops that are distinct objects">${dist}</span>`+
           `<span class="cv">${cm.published_global[ci].toFixed(2)}</span>`+
           `<span class="cv">${cm.published_local[ci].toFixed(2)}</span></div>`;
       }).join("")
@@ -546,6 +567,11 @@ function drawLegend(){
       el.innerHTML=`<div class="row"><b>Category</b></div>`+
         `<div class="row" style="color:var(--muted)">hues grouped by CDI semantic · hover to name · filter with the chips below</div>`;
     }
+  }else if(COLORBY==="instance"){
+    el.innerHTML=`<div class="row"><b>Estimated object instance</b></div>`+
+      `<div class="row"><span class="sw" style="background:hsl(210 70% 52%)"></span>same colour = same object (repeated)</div>`+
+      `<div class="row"><span class="sw" style="background:${css("--axis")}"></span>grey = seen only once</div>`+
+      `<div class="row" style="color:var(--muted)">filter to one category to read it</div>`;
   }else if(COLORBY==="semantic"){
     const present=[...new Set(D.cat_semantic)].sort();
     el.innerHTML=present.map(si=>{

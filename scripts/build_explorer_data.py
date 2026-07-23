@@ -116,6 +116,35 @@ def main() -> None:
     pub = base[base.source == "released_clip"].set_index("category")
     pubd = base[base.source == "released_dinov3"].set_index("category")
     freq = pd.read_csv(CCN / "category_frequency_valid85.csv").set_index("category")
+
+    # ---- instance clustering (same-object groups within each category) -----
+    # DINOv3 embeddings, average-linkage agglomerative at cos>0.80. Per-crop
+    # instance id (contiguous within category) + per-category diversity stats.
+    from numpy.linalg import norm
+    from sklearn.cluster import AgglomerativeClustering
+    INST_COS = 0.80
+    dstats = json.loads((PUBLIC / "embedding_norm_stats.json").read_text())["models"]["dinov3"]
+    dmu, dsd = np.array(dstats["mu"]), np.array(dstats["sigma"])
+    emb_man = pd.read_csv(PUBLIC / "embeddings" / "manifest.csv")
+    dkey = emb_man.set_index(["category", "stem"])
+    dino = np.stack([np.load(PUBLIC / "embeddings" / dkey.loc[(c, s), "dinov3_npy"]).astype(np.float32) * dsd + dmu
+                     for c, s in zip(manifest.category, manifest.stem)])
+    dino = dino / np.clip(norm(dino, axis=1, keepdims=True), 1e-8, None)
+    inst_per_crop = np.zeros(len(manifest), dtype=int)
+    inst_per_crop_ratio, repeat_rate = [], []
+    for c in cats:
+        idx = np.where(manifest.category.values == c)[0]
+        e = dino[idx]
+        if len(e) < 2:
+            lab = np.zeros(len(e), dtype=int)
+        else:
+            lab = AgglomerativeClustering(n_clusters=None, distance_threshold=1 - INST_COS,
+                                          metric="cosine", linkage="average").fit(e).labels_
+        inst_per_crop[idx] = lab
+        k = int(lab.max() + 1)
+        inst_per_crop_ratio.append(round(k / len(e), 3))
+        repeat_rate.append(round(1 - k / len(e), 3))
+    print(f"instances: {int(sum((inst_per_crop_ratio[i]*((manifest.category.values==cats[i]).sum())) for i in range(len(cats))))} approx")
     summary = pd.read_csv(METRICS / "layer_summary.csv")
     cls_sum = summary[summary.kind == "cls"].sort_values("block")
     fin = summary[summary.readout == "final"].iloc[0]
@@ -130,6 +159,7 @@ def main() -> None:
         "points": {
             "file": [f"{s}.jpg" for s in manifest.stem],
             "cat": [cat_index[c] for c in manifest.category],
+            "instance": [int(v) for v in inst_per_crop],   # within-category instance id
             "x": xs,
             "y": ys,
         },
@@ -141,6 +171,8 @@ def main() -> None:
             "published_local": [round(float(pub.loc[c, "mean_knn_dist"]), 3) for c in cats],
             "dinov3_global": [round(float(pubd.loc[c, "global_dispersion"]), 3) for c in cats],
             "frequency": [float(freq.loc[c, "proportion"]) if c in freq.index else None for c in cats],
+            "instances_per_crop": inst_per_crop_ratio,   # 1.0 = every crop a distinct object
+            "repeat_rate": repeat_rate,
         },
         "curves": {
             "rho_global": [round(float(v), 4) for v in cls_sum.rho_global_vs_released_clip] +
@@ -154,6 +186,7 @@ def main() -> None:
             "model": "OpenAI CLIP ViT-B/32 (open_clip ViT-B-32-quickgelu)",
             "source": "BabyView valid7018 public release, object-detection@e4883c6",
             "note": "72 privacy-filtered categories; body-part categories withheld.",
+            "instance_method": f"DINOv3 agglomerative clustering, cos>{INST_COS}; instance ids are per-category.",
         },
     }
     (OUT / "points.json").write_text(json.dumps(payload, separators=(",", ":")))
