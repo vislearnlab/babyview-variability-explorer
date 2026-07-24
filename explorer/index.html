@@ -157,6 +157,10 @@ a{color:var(--s0)}
       </div>
     </div>
     <div class="tgroup">
+      <div class="tlabel">Layout</div>
+      <button class="ghost" id="recomputeBtn" disabled title="select categories, then re-embed just those">Re-embed selected</button>
+    </div>
+    <div class="tgroup">
       <div class="tlabel">Reset</div>
       <button class="ghost" id="resetBtn">Clear filters</button>
     </div>
@@ -288,6 +292,53 @@ function buildCatPalette(){
 }
 
 let D=null, LAYER=0, COLORBY="semantic", VIEW="dots", BORDERS=false, MODEL="clip";
+let RECOMPUTED=false, FEATURES=null, RECOMPUTE_MAX=1600;
+
+// Compact exact t-SNE for re-embedding a selected subset (few hundred crops).
+// Adapted from the standard algorithm; deterministic (no Math.random).
+function rngv(n){ const x=Math.sin(n*12.9898)*43758.5453; return x-Math.floor(x); }
+function tsne(rows, opts){
+  opts=opts||{}; const LR=opts.lr||10, perplexity=opts.perplexity||20, iters=opts.iters||300;
+  const m=rows.length, dim=rows[0].length;
+  const Dm=new Float64Array(m*m);
+  for(let i=0;i<m;i++) for(let j=i+1;j<m;j++){
+    let s=0; const ri=rows[i],rj=rows[j]; for(let k=0;k<dim;k++){const d=ri[k]-rj[k]; s+=d*d;}
+    Dm[i*m+j]=s; Dm[j*m+i]=s;
+  }
+  const P=new Float64Array(m*m), logU=Math.log(perplexity);
+  for(let i=0;i<m;i++){
+    let bMin=-Infinity,bMax=Infinity,beta=1,t=0; const row=new Float64Array(m);
+    while(t++<50){
+      let sum=0; for(let j=0;j<m;j++){ row[j]= i===j?0:Math.exp(-Dm[i*m+j]*beta); sum+=row[j]; } sum=sum||1e-12;
+      let H=0; for(let j=0;j<m;j++){ const p=row[j]/sum; if(p>1e-12) H-=p*Math.log(p); }
+      const diff=H-logU; if(Math.abs(diff)<1e-5) break;
+      if(diff>0){ bMin=beta; beta=bMax===Infinity?beta*2:(beta+bMax)/2; } else { bMax=beta; beta=bMin===-Infinity?beta/2:(beta+bMin)/2; }
+    }
+    let sum=0; for(let j=0;j<m;j++){ row[j]= i===j?0:Math.exp(-Dm[i*m+j]*beta); sum+=row[j]; } sum=sum||1e-12;
+    for(let j=0;j<m;j++) P[i*m+j]=row[j]/sum;
+  }
+  const EXAG=4;
+  for(let i=0;i<m;i++) for(let j=i+1;j<m;j++){ const v=(P[i*m+j]+P[j*m+i])/(2*m)*EXAG; P[i*m+j]=Math.max(v,1e-12); P[j*m+i]=P[i*m+j]; }
+  let Y=Array.from({length:m},(_,i)=>[(rngv(i)-0.5)*1e-3,(rngv(i+7)-0.5)*1e-3]);
+  const gains=Array.from({length:m},()=>[1,1]), Yv=Array.from({length:m},()=>[0,0]);
+  let momentum=0.5;
+  for(let it=0;it<iters;it++){
+    if(it===Math.min(100,iters>>2)) for(let i=0;i<m*m;i++) P[i]/=EXAG;
+    if(it===250) momentum=0.8;
+    const num=new Float64Array(m*m); let qsum=0;
+    for(let i=0;i<m;i++) for(let j=i+1;j<m;j++){ const dx=Y[i][0]-Y[j][0],dy=Y[i][1]-Y[j][1],q=1/(1+dx*dx+dy*dy); num[i*m+j]=q; num[j*m+i]=q; qsum+=2*q; }
+    qsum=qsum||1e-12;
+    for(let i=0;i<m;i++){
+      let gx=0,gy=0;
+      for(let j=0;j<m;j++){ if(i===j) continue; const qij=num[i*m+j]/qsum, mult=(P[i*m+j]-qij)*num[i*m+j]; gx+=mult*(Y[i][0]-Y[j][0]); gy+=mult*(Y[i][1]-Y[j][1]); }
+      gx*=4; gy*=4;
+      let d=0; for(const g of [gx,gy]){ const sign=(g>0)!==(Yv[i][d]>0); gains[i][d]= sign?gains[i][d]+0.2:Math.max(gains[i][d]*0.8,0.01); Yv[i][d]=momentum*Yv[i][d]-LR*gains[i][d]*g; Y[i][d]+=Yv[i][d]; d++; }
+    }
+    let mx0=0,my0=0; for(let i=0;i<m;i++){mx0+=Y[i][0];my0+=Y[i][1];} mx0/=m;my0/=m;
+    for(let i=0;i<m;i++){Y[i][0]-=mx0;Y[i][1]-=my0;}
+  }
+  return Y;
+}
 const MODEL_LABEL={clip:"CLIP ViT-B/32", dinov3:"DINOv3 ViT-B/16"};
 // current model's per-layer arrays (fall back to legacy fields if absent)
 function mx(L){ return (D.points.x_by_model&&D.points.x_by_model[MODEL])?D.points.x_by_model[MODEL][L]:D.points.x[L]; }
@@ -721,7 +772,8 @@ function buildChips(){
   cc.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     const i=+b.dataset.ci;
     selCats.has(i)?selCats.delete(i):selCats.add(i);
-    b.classList.toggle("on"); draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc();
+    if(RECOMPUTED) resetLayout();   // selection changed -> stale re-embed
+    b.classList.toggle("on"); draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc(); updateRecomputeBtn();
     if(COLORBY==="category") drawLegend();
   });
   document.getElementById("catCount").textContent=`(${D.categories.length})`;
@@ -732,14 +784,58 @@ document.getElementById("axisSeg").onclick=e=>{
   [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
   drawCat();
 };
+// ---- re-embed selected categories with a fresh t-SNE --------------------
+function updateRecomputeBtn(){
+  const btn=document.getElementById("recomputeBtn");
+  if(RECOMPUTED){ btn.disabled=false; btn.textContent="Reset layout"; return; }
+  const n=selectedCropCount();
+  btn.disabled = n<2 || n>RECOMPUTE_MAX;
+  btn.textContent = "Re-embed selected";
+  btn.title = n<2 ? "select one or more categories first"
+    : n>RECOMPUTE_MAX ? `too many crops (${n}); select fewer categories (≤${RECOMPUTE_MAX})`
+    : `re-run t-SNE on these ${n} crops (${MODEL_LABEL[MODEL]} final embedding)`;
+}
+function selectedCropCount(){ let n=0; for(let i=0;i<D.n;i++) if(selCats.has(D.points.cat[i])) n++; return n; }
+async function loadFeatures(){
+  if(FEATURES) return FEATURES;
+  const badge=document.getElementById("layerBadge"); const prev=badge.textContent; badge.textContent="loading…";
+  FEATURES=await (await fetch("features.json")).json();
+  badge.textContent=prev; return FEATURES;
+}
+async function recomputeSelected(){
+  const idx=[]; for(let i=0;i<D.n;i++) if(selCats.has(D.points.cat[i])) idx.push(i);
+  if(idx.length<2 || idx.length>RECOMPUTE_MAX) return;
+  const F=await loadFeatures();
+  const feat=(F.features&&F.features[MODEL])?F.features[MODEL]:F.features.clip;
+  const badge=document.getElementById("layerBadge"); badge.textContent="computing…";
+  await new Promise(r=>setTimeout(r,30));   // let the label paint before the blocking solve
+  const rows=idx.map(i=>feat[i]);
+  let Y=tsne(rows,{perplexity:Math.min(30,Math.max(5,Math.floor(idx.length/4))), iters:300, lr:10});
+  // scale to the same ~±100 frame the precomputed layouts use
+  let mx=0; for(const p of Y) mx=Math.max(mx,Math.abs(p[0]),Math.abs(p[1])); mx=mx||1;
+  const nx=new Array(D.n).fill(0), ny=new Array(D.n).fill(0);
+  idx.forEach((i,k)=>{ nx[i]=Y[k][0]/mx*100; ny[i]=Y[k][1]/mx*100; });
+  curX=nx; curY=ny; RECOMPUTED=true;
+  document.getElementById("layer").disabled=true;
+  document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL]+" · re-embedded ("+idx.length+" crops, final)";
+  badge.textContent="re-embed"; view={k:1,tx:0,ty:0};
+  draw(); updateRecomputeBtn();
+}
+function resetLayout(){
+  RECOMPUTED=false;
+  document.getElementById("layer").disabled=false;
+  document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL];
+  setLayer(LAYER,false); updateRecomputeBtn();
+}
+document.getElementById("recomputeBtn").onclick=()=>{ RECOMPUTED?resetLayout():recomputeSelected(); };
 document.getElementById("modelSeg").onclick=e=>{
   const b=e.target.closest("button"); if(!b) return;
   if(!(D.models||["clip"]).includes(b.dataset.v)) return;   // ignore if not built
   MODEL=b.dataset.v;
   [...b.parentElement.children].forEach(x=>x.classList.toggle("on",x===b));
   document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL];
-  setLayer(LAYER,false);   // reproject at same block for the new model
-  drawLegend();
+  if(RECOMPUTED) resetLayout(); else setLayer(LAYER,false);   // reproject for the new model
+  drawLegend(); updateRecomputeBtn();
 };
 document.getElementById("layer").oninput=e=>setLayer(+e.target.value,true);
 document.getElementById("colorSeg").onclick=e=>{
@@ -791,9 +887,10 @@ document.getElementById("themeSeg").onclick=e=>{
   }
 })();
 document.getElementById("resetBtn").onclick=()=>{
+  if(RECOMPUTED) resetLayout();
   selCats.clear(); selSems.clear(); pinned=null;
   document.querySelectorAll(".chip.on").forEach(c=>c.classList.remove("on"));
-  draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc(); showCrop(-1);
+  draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc(); updateRecomputeBtn(); showCrop(-1);
 };
 document.getElementById("playBtn").onclick=function(){
   playing=!playing; this.textContent=playing?"Pause":"Play";
@@ -867,7 +964,7 @@ window.addEventListener("resize",()=>{resize();drawCat()});
     if(!built.includes(b.dataset.v)){ b.disabled=true; b.style.opacity=.4; b.style.cursor="not-allowed"; b.title="not built into this dataset"; }
   });
   document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL];
-  buildChips(); drawLegend(); resize(); setLayer(12,false); updateInstDesc();
+  buildChips(); drawLegend(); resize(); setLayer(12,false); updateInstDesc(); updateRecomputeBtn();
 })();
 </script>
 </body>
