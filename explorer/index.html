@@ -773,7 +773,9 @@ function buildChips(){
     const i=+b.dataset.ci;
     selCats.has(i)?selCats.delete(i):selCats.add(i);
     if(RECOMPUTED) resetLayout();   // selection changed -> stale re-embed
-    b.classList.toggle("on"); draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc(); updateRecomputeBtn();
+    b.classList.toggle("on");
+    updateRecomputeBtn();   // reflect selection immediately, before any fragile draw
+    draw(); updateStats(); drawCat(); renderInstances(); updateInstDesc();
     if(COLORBY==="category") drawLegend();
   });
   document.getElementById("catCount").textContent=`(${D.categories.length})`;
