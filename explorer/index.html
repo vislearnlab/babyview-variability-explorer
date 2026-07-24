@@ -158,7 +158,7 @@ a{color:var(--s0)}
     </div>
     <div class="tgroup">
       <div class="tlabel">Layout</div>
-      <button class="ghost" id="recomputeBtn" disabled title="select categories, then re-embed just those">Re-embed selected</button>
+      <button class="ghost" id="recomputeBtn" title="select categories, then re-embed just those">Re-embed selected</button>
     </div>
     <div class="tgroup">
       <div class="tlabel">Reset</div>
@@ -788,14 +788,21 @@ document.getElementById("axisSeg").onclick=e=>{
 };
 // ---- re-embed selected categories with a fresh t-SNE --------------------
 function updateRecomputeBtn(){
+  // Button stays ENABLED always; validation happens on click with visible
+  // feedback, so a click never silently does nothing.
   const btn=document.getElementById("recomputeBtn");
-  if(RECOMPUTED){ btn.disabled=false; btn.textContent="Reset layout"; return; }
+  if(btn._flash) return;   // don't clobber a transient message
+  if(RECOMPUTED){ btn.textContent="Reset layout"; btn.title="back to the layer view"; return; }
   const n=selectedCropCount();
-  btn.disabled = n<2 || n>RECOMPUTE_MAX;
   btn.textContent = "Re-embed selected";
-  btn.title = n<2 ? "select one or more categories first"
+  btn.title = n<2 ? "select one or more categories first (chips below)"
     : n>RECOMPUTE_MAX ? `too many crops (${n}); select fewer categories (≤${RECOMPUTE_MAX})`
     : `re-run t-SNE on these ${n} crops (${MODEL_LABEL[MODEL]} final embedding)`;
+}
+function flashBtn(msg){
+  const btn=document.getElementById("recomputeBtn");
+  btn._flash=true; btn.textContent=msg;
+  setTimeout(()=>{ btn._flash=false; updateRecomputeBtn(); }, 2200);
 }
 function selectedCropCount(){ let n=0; for(let i=0;i<D.n;i++) if(selCats.has(D.points.cat[i])) n++; return n; }
 async function loadFeatures(){
@@ -829,7 +836,13 @@ function resetLayout(){
   document.getElementById("modelTag").textContent=MODEL_LABEL[MODEL];
   setLayer(LAYER,false); updateRecomputeBtn();
 }
-document.getElementById("recomputeBtn").onclick=()=>{ RECOMPUTED?resetLayout():recomputeSelected(); };
+document.getElementById("recomputeBtn").onclick=()=>{
+  if(RECOMPUTED){ resetLayout(); return; }
+  const n=selectedCropCount();
+  if(n<2){ flashBtn("↓ pick categories first"); return; }
+  if(n>RECOMPUTE_MAX){ flashBtn(`too many (${n})`); return; }
+  recomputeSelected().catch(e=>flashBtn("error: "+e.message));
+};
 document.getElementById("modelSeg").onclick=e=>{
   const b=e.target.closest("button"); if(!b) return;
   if(!(D.models||["clip"]).includes(b.dataset.v)) return;   // ignore if not built
